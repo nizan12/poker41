@@ -65,7 +65,7 @@ function SceneContent() {
 
       {/* Contact shadows on table */}
       <ContactShadows
-        position={[0, 0.005, 0]}
+        position={[0, 0.05, 0]}
         opacity={0.6}
         scale={12}
         blur={2.5}

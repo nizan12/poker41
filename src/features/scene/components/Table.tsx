@@ -60,7 +60,7 @@ export function Table() {
       ))}
 
       {/* Center line / decoration on felt */}
-      <mesh position={[0, 0.011, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[2.5, 2.6, 64]} />
         <meshStandardMaterial
           color="#1d6b42"
@@ -72,7 +72,7 @@ export function Table() {
       </mesh>
 
       {/* Inner circle for deck/discard area */}
-      <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[1.2, 64]} />
         <meshStandardMaterial
           color="#174d30"
