@@ -52,6 +52,7 @@ export default function GameRoomPage() {
   const [chatInput, setChatInput] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [turnTimer, setTurnTimer] = useState(30);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Set local player ID
   useEffect(() => {
@@ -163,86 +164,101 @@ export default function GameRoomPage() {
   };
 
   const handleDrawDeck = async () => {
-    if (!user || !room || room.currentTurn !== user.uid || localHand.length !== 4) return;
+    if (!user || !room || room.currentTurn !== user.uid || localHand.length !== 4 || isProcessing) return;
+    setIsProcessing(true);
+    
+    try {
+      const deckCards = [...(room.deckCards || [])];
+      if (deckCards.length === 0) return;
 
-    const deckCards = [...(room.deckCards || [])];
-    if (deckCards.length === 0) return;
+      const drawnCard = deckCards.pop()!;
+      const myPlayer = players.find(p => p.id === user.uid);
+      if (!myPlayer) return;
 
-    const drawnCard = deckCards.pop()!;
-    const myPlayer = players.find(p => p.id === user.uid);
-    if (!myPlayer) return;
-
-    await updateRoom(roomId, { deckCards });
-    await updatePlayer(roomId, user.uid, {
-      hand: [...myPlayer.hand, drawnCard],
-    });
+      await updateRoom(roomId, { deckCards });
+      await updatePlayer(roomId, user.uid, {
+        hand: [...myPlayer.hand, drawnCard],
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDrawDiscard = async () => {
-    if (!user || !room || room.currentTurn !== user.uid || localHand.length !== 4) return;
+    if (!user || !room || room.currentTurn !== user.uid || localHand.length !== 4 || isProcessing) return;
+    setIsProcessing(true);
 
-    const discardPile = [...(room.discardPile || [])];
-    if (discardPile.length === 0) return;
+    try {
+      const discardPile = [...(room.discardPile || [])];
+      if (discardPile.length === 0) return;
 
-    const drawnCard = discardPile.pop()!;
-    const myPlayer = players.find(p => p.id === user.uid);
-    if (!myPlayer) return;
+      const drawnCard = discardPile.pop()!;
+      const myPlayer = players.find(p => p.id === user.uid);
+      if (!myPlayer) return;
 
-    await updateRoom(roomId, { discardPile });
-    await updatePlayer(roomId, user.uid, {
-      hand: [...myPlayer.hand, drawnCard],
-    });
+      await updateRoom(roomId, { discardPile });
+      await updatePlayer(roomId, user.uid, {
+        hand: [...myPlayer.hand, drawnCard],
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDiscard = async () => {
-    if (!user || !room || room.currentTurn !== user.uid || !selectedCardId || localHand.length !== 5) return;
+    if (!user || !room || room.currentTurn !== user.uid || !selectedCardId || localHand.length !== 5 || isProcessing) return;
+    setIsProcessing(true);
 
-    const myPlayer = players.find(p => p.id === user.uid);
-    if (!myPlayer) return;
+    try {
+      const myPlayer = players.find(p => p.id === user.uid);
+      if (!myPlayer) return;
 
-    const newHand = myPlayer.hand.filter((id: string) => id !== selectedCardId);
-    const newDiscard = [...(room.discardPile || []), selectedCardId];
+      const newHand = myPlayer.hand.filter((id: string) => id !== selectedCardId);
+      const newDiscard = [...(room.discardPile || []), selectedCardId];
 
-    const newHandCards = newHand.map(id => {
-      const [suit, rank] = id.split('-');
-      return { id, suit: suit as any, rank: rank as any, value: (RANK_VALUES as any)[rank] };
-    });
+      const newHandCards = newHand.map(id => {
+        const [suit, rank] = id.split('-');
+        return { id, suit: suit as any, rank: rank as any, value: (RANK_VALUES as any)[rank] };
+      });
 
-    if (isWinningHand(newHandCards)) {
-      // Automatic win!
+      if (isWinningHand(newHandCards)) {
+        // Automatic win!
+        await updateRoom(roomId, {
+          discardPile: newDiscard,
+          status: 'finished',
+          winnerId: user.uid,
+        });
+        await updatePlayer(roomId, user.uid, { hand: newHand });
+        selectCard(null);
+        return;
+      }
+
+      // Check if deck is empty (Draw)
+      if (room.deckCards && room.deckCards.length === 0) {
+        await updateRoom(roomId, {
+          discardPile: newDiscard,
+          status: 'finished',
+          winnerId: 'DRAW',
+        });
+        await updatePlayer(roomId, user.uid, { hand: newHand });
+        selectCard(null);
+        return;
+      }
+
+      // Move to next player
+      const currentIdx = players.findIndex(p => p.id === user.uid);
+      const nextIdx = (currentIdx + 1) % players.length;
+
       await updateRoom(roomId, {
         discardPile: newDiscard,
-        status: 'finished',
-        winnerId: user.uid,
+        currentTurn: players[nextIdx].id,
+        turnStartedAt: Date.now(),
       });
       await updatePlayer(roomId, user.uid, { hand: newHand });
       selectCard(null);
-      return;
+    } finally {
+      setIsProcessing(false);
     }
-
-    // Check if deck is empty (Draw)
-    if (room.deckCards && room.deckCards.length === 0) {
-      await updateRoom(roomId, {
-        discardPile: newDiscard,
-        status: 'finished',
-        winnerId: 'DRAW',
-      });
-      await updatePlayer(roomId, user.uid, { hand: newHand });
-      selectCard(null);
-      return;
-    }
-
-    // Move to next player
-    const currentIdx = players.findIndex(p => p.id === user.uid);
-    const nextIdx = (currentIdx + 1) % players.length;
-
-    await updateRoom(roomId, {
-      discardPile: newDiscard,
-      currentTurn: players[nextIdx].id,
-      turnStartedAt: Date.now(),
-    });
-    await updatePlayer(roomId, user.uid, { hand: newHand });
-    selectCard(null);
   };
 
   const handleDeclareWin = async () => {
@@ -393,13 +409,13 @@ export default function GameRoomPage() {
 
         {/* Player Hand Score */}
         {isPlaying && localHand.length > 0 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-            <div className="glass-card px-4 py-2 flex items-center gap-4">
+          <div className="absolute bottom-20 md:bottom-24 left-1/2 -translate-x-1/2">
+            <div className="glass-card px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-2 md:gap-4 scale-90 md:scale-100 whitespace-nowrap">
               <div className="text-text-muted text-xs">Skor:</div>
-              <div className="text-secondary font-heading font-bold text-lg">
+              <div className="text-secondary font-heading font-bold text-base md:text-lg">
                 {calculateHandScore(localHand).score}
               </div>
-              <div className="text-text-muted text-xs">
+              <div className="text-text-muted text-xs ml-2 md:ml-0">
                 Best: {calculateHandScore(localHand).bestSuit}
               </div>
             </div>
@@ -408,21 +424,23 @@ export default function GameRoomPage() {
 
         {/* Action Buttons */}
         {isPlaying && myTurn && (
-          <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+          <div className="absolute bottom-32 md:bottom-32 right-4 md:right-8 flex flex-col gap-2 scale-90 md:scale-100 origin-bottom-right z-10">
             {localHand.length === 4 && (
               <>
                 <button
                   onClick={handleDrawDeck}
-                  className="btn-primary px-4 py-3 text-sm rounded-xl flex items-center gap-2"
+                  disabled={isProcessing}
+                  className="btn-primary px-3 md:px-4 py-2.5 md:py-3 text-xs md:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                 >
-                  🃏 Ambil dari Deck
+                  🃏 Ambil Deck
                 </button>
                 {(room?.discardPile?.length ?? 0) > 0 && (
                   <button
                     onClick={handleDrawDiscard}
-                    className="btn-secondary px-4 py-3 text-sm rounded-xl flex items-center gap-2"
+                    disabled={isProcessing}
+                    className="btn-secondary px-3 md:px-4 py-2.5 md:py-3 text-xs md:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                   >
-                    ♻️ Ambil dari Buangan
+                    ♻️ Ambil Buangan
                   </button>
                 )}
               </>
@@ -430,17 +448,10 @@ export default function GameRoomPage() {
             {localHand.length === 5 && selectedCardId && (
               <button
                 onClick={handleDiscard}
-                className="btn-gold px-4 py-3 text-sm rounded-xl flex items-center gap-2"
+                disabled={isProcessing}
+                className="btn-gold px-3 md:px-4 py-2.5 md:py-3 text-xs md:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
               >
                 🗑️ Buang Kartu
-              </button>
-            )}
-            {isWinningHand(localHand) && (
-              <button
-                onClick={handleDeclareWin}
-                className="px-4 py-3 text-sm rounded-xl font-bold bg-gradient-to-r from-secondary via-yellow-400 to-secondary text-surface-dark animate-pulse-glow"
-              >
-                🏆 REMI 41!
               </button>
             )}
           </div>

@@ -61,6 +61,12 @@ export async function deleteRoom(roomId: string) {
 
 // --- Player Operations ---
 
+export async function getPlayer(roomId: string, playerId: string) {
+  const playerDoc = await getDoc(doc(db, 'rooms', roomId, 'players', playerId));
+  if (!playerDoc.exists()) return null;
+  return { id: playerDoc.id, ...playerDoc.data() };
+}
+
 export async function addPlayer(roomId: string, playerId: string, playerData: DocumentData) {
   await setDoc(doc(db, 'rooms', roomId, 'players', playerId), {
     ...playerData,

@@ -4,7 +4,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/features/auth/stores/authStore';
-import { createRoom, addPlayer, getAvailableRooms, getRoom } from '@/lib/firebase/firestore';
+import {
+  createRoom,
+  getRoom,
+  addPlayer,
+  getPlayer,
+  getAvailableRooms,
+} from '@/lib/firebase/firestore';
 import { generateRoomCode } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -139,14 +145,24 @@ export default function LobbyPage() {
       const currentUser = user || useAuthStore.getState().user;
       if (!currentUser) return;
 
-      await addPlayer(joinId, currentUser.uid, {
-        name: playerName.trim(),
-        hand: [],
-        score: 0,
-        isReady: false,
-        isConnected: true,
-        seatIndex: -1, // Will be assigned by the room
-      });
+      const existingPlayer = await getPlayer(joinId, currentUser.uid);
+
+      if (!existingPlayer) {
+        if ((room as any).status !== 'waiting') {
+          setError('Permainan sudah dimulai, tidak bisa bergabung sekarang.');
+          setLoading(false);
+          return;
+        }
+
+        await addPlayer(joinId, currentUser.uid, {
+          name: playerName.trim(),
+          hand: [],
+          score: 0,
+          isReady: false,
+          isConnected: true,
+          seatIndex: -1, // Will be assigned by the room
+        });
+      }
 
       router.push(`/room/${joinId}`);
     } catch (err) {
