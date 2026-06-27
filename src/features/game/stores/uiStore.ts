@@ -11,6 +11,9 @@ interface UIState {
   isLoading: boolean;
   loadingMessage: string;
 
+  // Audio
+  isMuted: boolean;
+
   // Toast
   toasts: Array<{ id: string; message: string; type: 'info' | 'success' | 'error' | 'warning' }>;
 
@@ -24,6 +27,9 @@ interface UIState {
   setLoading: (loading: boolean, message?: string) => void;
   addToast: (message: string, type?: 'info' | 'success' | 'error' | 'warning') => void;
   removeToast: (id: string) => void;
+  
+  // Audio actions
+  toggleMute: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -34,6 +40,7 @@ export const useUIStore = create<UIState>((set) => ({
   isLoading: false,
   loadingMessage: '',
   toasts: [],
+  isMuted: false,
 
   toggleChat: () => set((s) => ({ isChatOpen: !s.isChatOpen })),
   openSettings: () => set({ isSettingsOpen: true }),
@@ -53,4 +60,10 @@ export const useUIStore = create<UIState>((set) => ({
   },
 
   removeToast: (id) => set((s) => ({ toasts: s.toasts.filter(t => t.id !== id) })),
+  
+  toggleMute: () => set((s) => {
+    const newMuted = !s.isMuted;
+    import('@/lib/audioManager').then(({ audioManager }) => audioManager.setMute(newMuted));
+    return { isMuted: newMuted };
+  }),
 }));

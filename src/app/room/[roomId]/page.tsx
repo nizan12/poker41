@@ -6,6 +6,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/features/auth/stores/authStore';
 import { useGameStore } from '@/features/game/stores/gameStore';
+import { useUIStore } from '@/features/game/stores/uiStore';
+import { audioManager } from '@/lib/audioManager';
 import {
   onRoomSnapshot,
   onPlayersSnapshot,
@@ -47,6 +49,7 @@ export default function GameRoomPage() {
     setLocalHand, selectCard, setCanDraw, setCanDiscard,
     setCanDeclareWin, setDrawActions,
   } = useGameStore();
+  const { isMuted, toggleMute } = useUIStore();
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -69,7 +72,12 @@ export default function GameRoomPage() {
       if (data) {
         setRoom(data as unknown as Room);
         if (data.status === 'playing') setPhase('playing');
-        if (data.status === 'finished') setPhase('ended');
+        if (data.status === 'finished') {
+          setPhase('ended');
+          if (data.winnerId && data.winnerId !== 'DRAW') {
+             audioManager.play('win');
+          }
+        }
       } else {
         router.push('/lobby');
       }
@@ -161,6 +169,9 @@ export default function GameRoomPage() {
         isReady: true,
       });
     }
+    
+    audioManager.play('shuffle');
+    setTimeout(() => audioManager.play('deal'), 800);
   };
 
   const handleDrawDeck = async () => {
@@ -175,6 +186,7 @@ export default function GameRoomPage() {
       const myPlayer = players.find(p => p.id === user.uid);
       if (!myPlayer) return;
 
+      audioManager.play('draw');
       await updateRoom(roomId, { deckCards });
       await updatePlayer(roomId, user.uid, {
         hand: [...myPlayer.hand, drawnCard],
@@ -196,6 +208,7 @@ export default function GameRoomPage() {
       const myPlayer = players.find(p => p.id === user.uid);
       if (!myPlayer) return;
 
+      audioManager.play('draw');
       await updateRoom(roomId, { discardPile });
       await updatePlayer(roomId, user.uid, {
         hand: [...myPlayer.hand, drawnCard],
@@ -213,6 +226,7 @@ export default function GameRoomPage() {
       const myPlayer = players.find(p => p.id === user.uid);
       if (!myPlayer) return;
 
+      audioManager.play('discard');
       const newHand = myPlayer.hand.filter((id: string) => id !== selectedCardId);
       const newDiscard = [...(room.discardPile || []), selectedCardId];
 
@@ -410,7 +424,15 @@ export default function GameRoomPage() {
         {/* Player Hand Score */}
         {isPlaying && localHand.length > 0 && (
           <div className="absolute bottom-20 md:bottom-24 left-1/2 -translate-x-1/2">
-            <div className="glass-card px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-2 md:gap-4 scale-90 md:scale-100 whitespace-nowrap">
+            <div className="flex items-center gap-2 md:gap-4">
+          <button 
+            onClick={toggleMute}
+            className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-surface-dark/50 flex items-center justify-center border border-border hover:bg-surface transition-colors"
+            title={isMuted ? 'Unmute Suara' : 'Mute Suara'}
+          >
+            {isMuted ? '🔇' : '🔊'}
+          </button>
+          <div className="glass-card px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-2 md:gap-4 scale-90 md:scale-100 whitespace-nowrap">
               <div className="text-text-muted text-xs">Skor:</div>
               <div className="text-secondary font-heading font-bold text-base md:text-lg">
                 {calculateHandScore(localHand).score}
@@ -418,6 +440,7 @@ export default function GameRoomPage() {
               <div className="text-text-muted text-xs ml-2 md:ml-0">
                 Best: {calculateHandScore(localHand).bestSuit}
               </div>
+            </div>
             </div>
           </div>
         )}
