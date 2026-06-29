@@ -17,6 +17,7 @@ import {
   submitMove,
   sendChatMessage,
   onChatSnapshot,
+  removePlayer,
 } from '@/lib/firebase/firestore';
 import {
   createDeck,
@@ -121,8 +122,11 @@ export default function GameRoomPage() {
       setCanDraw(myTurn && hand.length === 4);
       setCanDiscard(myTurn && hand.length === 5);
       setCanDeclareWin(myTurn && isWinningHand(hand));
+    } else {
+      // If user is not found in players array (kicked or hasn't joined), redirect to lobby
+      router.push('/lobby');
     }
-  }, [players, user, room, setLocalHand, setCanDraw, setCanDiscard, setCanDeclareWin]);
+  }, [players, user, room, setLocalHand, setCanDraw, setCanDiscard, setCanDeclareWin, router]);
 
   // Turn timer
   useEffect(() => {
@@ -507,6 +511,66 @@ export default function GameRoomPage() {
     }).sort((a, b) => b.scoreInfo.score - a.scoreInfo.score);
   }, [isFinished, players]);
 
+  const handleLeaveRoom = async () => {
+    if (!user || !room) return;
+    try {
+      setIsProcessing(true);
+      
+      // If player is host, assign new host
+      if (room.hostId === user.uid) {
+        const otherPlayers = players.filter(p => p.id !== user.uid);
+        if (otherPlayers.length > 0) {
+          await updateRoom(roomId, { hostId: otherPlayers[0].id });
+        }
+      }
+
+      // If playing and it's their turn, pass turn
+      if (phase === 'playing' && room.currentTurn === user.uid) {
+        const otherPlayers = players.filter(p => p.id !== user.uid);
+        if (otherPlayers.length > 0) {
+          // Simple pass to next available player
+          const currentIdx = players.findIndex(p => p.id === user.uid);
+          const nextIdx = currentIdx === players.length - 1 ? 0 : currentIdx;
+          const nextPlayer = otherPlayers[nextIdx] || otherPlayers[0];
+          await updateRoom(roomId, {
+            currentTurn: nextPlayer.id,
+            turnStartedAt: Date.now()
+          });
+        }
+      }
+
+      // Remove from firestore
+      await removePlayer(roomId, user.uid);
+      router.push('/lobby');
+    } catch (e) {
+      console.error('Error leaving room:', e);
+      setIsProcessing(false);
+    }
+  };
+
+  const handleKickPlayer = async (targetPlayerId: string) => {
+    if (!user || !room || room.hostId !== user.uid) return;
+    try {
+      // If playing and it's their turn, pass turn
+      if (phase === 'playing' && room.currentTurn === targetPlayerId) {
+        const otherPlayers = players.filter(p => p.id !== targetPlayerId);
+        if (otherPlayers.length > 0) {
+          const currentIdx = players.findIndex(p => p.id === targetPlayerId);
+          const nextIdx = currentIdx === players.length - 1 ? 0 : currentIdx;
+          const nextPlayer = otherPlayers[nextIdx] || otherPlayers[0];
+          await updateRoom(roomId, {
+            currentTurn: nextPlayer.id,
+            turnStartedAt: Date.now()
+          });
+        }
+      }
+      // Remove from firestore
+      await removePlayer(roomId, targetPlayerId);
+    } catch (e) {
+      console.error('Error kicking player:', e);
+    }
+  };
+
   return (
     <div className="w-full h-screen relative overflow-hidden bg-background">
       {/* Voice Chat System */}
@@ -520,8 +584,9 @@ export default function GameRoomPage() {
         {/* Top Bar */}
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-3">
           <button
-            onClick={() => router.push('/lobby')}
-            className="glass-card px-3 py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors"
+            onClick={handleLeaveRoom}
+            disabled={isProcessing}
+            className="glass-card px-3 py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
           >
             ← Keluar
           </button>
@@ -576,6 +641,15 @@ export default function GameRoomPage() {
                 <span className="text-text-muted text-xs ml-2">
                   {isDealingIntro ? Math.min(p.hand?.length || 0, dealtCardsCount) : p.hand?.length || 0} krt
                 </span>
+              )}
+              {room?.hostId === user?.uid && p.id !== user?.uid && (
+                <button 
+                  onClick={() => handleKickPlayer(p.id)}
+                  className="ml-auto pl-2 text-text-muted hover:text-danger transition-colors"
+                  title="Keluarkan pemain"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
           ))}

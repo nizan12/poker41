@@ -14,7 +14,6 @@ export function VoiceChatManager() {
   
   // Keep track of connected peers and their audio elements
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
-  const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({});
 
   useEffect(() => {
     if (!room || !localPlayerId || typeof window === 'undefined') return;
@@ -107,29 +106,20 @@ export function VoiceChatManager() {
     };
   }, [isMicOn, players, localPlayerId, room?.id]);
 
-  // Manage Audio Elements for remote streams
-  useEffect(() => {
-    // Clean up disconnected streams
-    Object.keys(audioElementsRef.current).forEach(peerId => {
-      if (!remoteStreams[peerId]) {
-        const audio = audioElementsRef.current[peerId];
-        audio.pause();
-        audio.srcObject = null;
-        delete audioElementsRef.current[peerId];
-      }
-    });
-
-    // Play new streams
-    Object.entries(remoteStreams).forEach(([peerId, stream]) => {
-      if (!audioElementsRef.current[peerId]) {
-        const audio = new Audio();
-        audio.srcObject = stream;
-        audio.autoplay = true;
-        audio.play().catch(e => console.warn('[VoiceChat] Auto-play prevented for audio:', e));
-        audioElementsRef.current[peerId] = audio;
-      }
-    });
-  }, [remoteStreams]);
-
-  return null; // This is a headless component
+  return (
+    <>
+      {Object.entries(remoteStreams).map(([peerId, stream]) => (
+        <audio
+          key={peerId}
+          autoPlay
+          playsInline
+          ref={(el) => {
+            if (el && el.srcObject !== stream) {
+              el.srcObject = stream;
+            }
+          }}
+        />
+      ))}
+    </>
+  );
 }
