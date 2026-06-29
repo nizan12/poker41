@@ -34,15 +34,35 @@ export function chatRef(roomId: string) {
   return collection(db, 'rooms', roomId, 'chat');
 }
 
+// --- Utility ---
+function generateShortId(length = 5) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 // --- Room Operations ---
 
 export async function createRoom(roomData: DocumentData) {
-  const roomDoc = doc(roomsRef);
+  // Generate a short ID
+  let roomId = generateShortId();
+  let roomDoc = doc(db, 'rooms', roomId);
+  
+  // Basic collision check (optional but safe)
+  const existing = await getDoc(roomDoc);
+  if (existing.exists()) {
+    roomId = generateShortId(6);
+    roomDoc = doc(db, 'rooms', roomId);
+  }
+
   await setDoc(roomDoc, {
     ...roomData,
     createdAt: serverTimestamp(),
   });
-  return roomDoc.id;
+  return roomId;
 }
 
 export async function getRoom(roomId: string) {
