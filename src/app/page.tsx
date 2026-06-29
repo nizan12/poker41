@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { Gamepad2, Zap, Lock, Palette, Volume2, Smartphone } from 'lucide-react';
 
 const HeroBackground = dynamic(
   () => import('@/features/lobby/components/HeroBackground'),
@@ -143,32 +144,32 @@ export default function LandingPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 {
-                  icon: '🎮',
+                  icon: <Gamepad2 className="w-8 h-8" />,
                   title: '3D Interaktif',
                   desc: 'Meja dan kartu dirender dalam 3D penuh dengan animasi yang halus dan realistis.',
                 },
                 {
-                  icon: '⚡',
+                  icon: <Zap className="w-8 h-8" />,
                   title: 'Realtime Sync',
                   desc: 'Setiap aksi langsung terlihat oleh semua pemain tanpa delay berkat Firebase.',
                 },
                 {
-                  icon: '🔒',
+                  icon: <Lock className="w-8 h-8" />,
                   title: 'Anti Cheat',
                   desc: 'Server-authoritative logic memastikan tidak ada pemain yang bisa curang.',
                 },
                 {
-                  icon: '🎨',
+                  icon: <Palette className="w-8 h-8" />,
                   title: 'Premium Design',
                   desc: 'Tampilan modern dengan tema casino premium yang elegan dan responsif.',
                 },
                 {
-                  icon: '🔊',
+                  icon: <Volume2 className="w-8 h-8" />,
                   title: 'Sound Effects',
                   desc: 'Audio imersif untuk setiap aksi — shuffle, deal, draw, dan efek kemenangan.',
                 },
                 {
-                  icon: '📱',
+                  icon: <Smartphone className="w-8 h-8" />,
                   title: 'Cross Platform',
                   desc: 'Mainkan di desktop, tablet, atau smartphone — cukup buka browser.',
                 },
@@ -177,7 +178,7 @@ export default function LandingPage() {
                   key={feature.title}
                   className="glass-card p-6 hover:border-border-accent transition-all duration-300 group"
                 >
-                  <div className="text-3xl mb-4">{feature.icon}</div>
+                  <div className="mb-4 text-text-bright group-hover:text-primary transition-colors">{feature.icon}</div>
                   <h3 className="font-heading font-semibold text-lg text-text-bright mb-2 group-hover:text-primary transition-colors">
                     {feature.title}
                   </h3>

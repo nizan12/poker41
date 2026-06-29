@@ -10,13 +10,17 @@ import { useGameStore } from '@/features/game/stores/gameStore';
  */
 export function PlayerHandUI() {
   const localHand = useGameStore((s) => s.localHand);
+  const isDealingIntro = useGameStore((s) => s.isDealingIntro);
+  const dealtCardsCount = useGameStore((s) => s.dealtCardsCount);
   const selectedCardId = useGameStore((s) => s.selectedCardId);
   const selectCard = useGameStore((s) => s.selectCard);
   const hoveredCardId = useGameStore((s) => s.hoveredCardId);
   const hoverCard = useGameStore((s) => s.hoverCard);
   const phase = useGameStore((s) => s.phase);
 
-  const isInteractive = phase === 'playing';
+  const displayHand = isDealingIntro ? localHand.slice(0, dealtCardsCount) : localHand;
+
+  const isInteractive = phase === 'playing' && !isDealingIntro;
 
   // Build the SVG path from card ID
   const getCardPath = (cardId: string) => {
@@ -26,21 +30,21 @@ export function PlayerHandUI() {
   };
 
   const fanAngle = useMemo(() => {
-    const count = localHand.length;
+    const count = displayHand.length;
     if (count <= 1) return 0;
     return Math.min(8, 40 / count); // degrees per card
-  }, [localHand.length]);
+  }, [displayHand.length]);
 
-  if (localHand.length === 0) return null;
+  if (displayHand.length === 0) return null;
 
   return (
     <div className="player-hand-ui">
       <div className="hand-container">
         <AnimatePresence mode="popLayout">
-          {localHand.map((card, i) => {
+          {displayHand.map((card, i) => {
             const isSelected = selectedCardId === card.id;
             const isHovered = hoveredCardId === card.id;
-            const count = localHand.length;
+            const count = displayHand.length;
             const mid = (count - 1) / 2;
             const offset = i - mid;
             const rotation = offset * fanAngle;
@@ -81,9 +85,6 @@ export function PlayerHandUI() {
                     draggable={false}
                     className="card-image"
                   />
-                  {isSelected && (
-                    <div className="card-selected-glow" />
-                  )}
                 </button>
               </motion.div>
             );
@@ -117,27 +118,22 @@ export function PlayerHandUI() {
         }
         .card-button {
           position: relative;
-          width: 90px;
-          height: 130px;
-          border: 2px solid transparent;
-          border-radius: 8px;
-          overflow: hidden;
+          width: 95px;
+          height: 135px;
+          border: none;
+          background: transparent;
           cursor: pointer;
-          background: white;
           padding: 0;
-          transition: border-color 0.2s, box-shadow 0.2s;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+          transition: filter 0.2s;
         }
         .card-button:disabled {
           cursor: default;
         }
         .card-button.hovered {
-          border-color: rgba(245, 158, 11, 0.7);
-          box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3), 0 4px 12px rgba(0,0,0,0.4);
+          filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.8));
         }
         .card-button.selected {
-          border-color: rgba(16, 185, 129, 0.9);
-          box-shadow: 0 0 20px rgba(16, 185, 129, 0.5), 0 4px 12px rgba(0,0,0,0.4);
+          animation: pulse-glow 1.5s ease-in-out infinite;
         }
         .card-image {
           width: 100%;
@@ -146,16 +142,10 @@ export function PlayerHandUI() {
           display: block;
           pointer-events: none;
         }
-        .card-selected-glow {
-          position: absolute;
-          inset: -3px;
-          border-radius: 10px;
-          border: 2px solid rgba(16, 185, 129, 0.8);
-          animation: pulse-glow 1.5s ease-in-out infinite;
-        }
+        
         @keyframes pulse-glow {
-          0%, 100% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
-          50% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.7); }
+          0%, 100% { filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.6)); }
+          50% { filter: drop-shadow(0 0 16px rgba(16, 185, 129, 1)); }
         }
 
         @media (max-width: 640px) {

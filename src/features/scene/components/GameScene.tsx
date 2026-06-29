@@ -9,6 +9,7 @@ import { CardDeck } from './CardDeck';
 import { DiscardPile } from './DiscardPile';
 import { PlayerHand } from './PlayerHand';
 import { OpponentHands } from './OpponentHands';
+import { AnimatedCards } from './AnimatedCards';
 import { WinParticles } from './WinParticles';
 import { useGameStore } from '@/features/game/stores/gameStore';
 import { useAnimationStore } from '@/features/game/stores/animationStore';
@@ -63,21 +64,14 @@ function SceneContent() {
       {/* Table */}
       <Table />
 
-      {/* Contact shadows on table */}
-      <ContactShadows
-        position={[0, 0.05, 0]}
-        opacity={0.6}
-        scale={12}
-        blur={2.5}
-        far={4}
-        color="#000000"
-      />
-
       {/* Card Deck */}
       <CardDeck />
 
       {/* Discard Pile */}
       <DiscardPile />
+
+      {/* Flying Card Animations */}
+      <AnimatedCards />
 
       {/* Local Player Hand (Now rendered in 2D UI) */}
       {/* <PlayerHand /> */}

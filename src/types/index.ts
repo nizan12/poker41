@@ -59,6 +59,12 @@ export interface Room {
   discardPile: string[];         // Card IDs in discard (visible)
   winnerId: string | null;
   roundNumber: number;
+  lastAction?: {
+    type: 'draw_deck' | 'draw_discard' | 'discard';
+    playerId: string;
+    cardId: string;
+    timestamp: number;
+  };
 }
 
 // --- Game State ---

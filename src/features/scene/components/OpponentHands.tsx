@@ -1,18 +1,17 @@
 'use client';
 
 import { useMemo, Suspense } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { Html, RoundedBox, useTexture } from '@react-three/drei';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore } from '@/features/game/stores/gameStore';
-
-function CardFaceTexture({ imagePath }: { imagePath: string }) {
-  const texture = useTexture(imagePath);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return <meshStandardMaterial map={texture} roughness={0.3} metalness={0.05} />;
-}
-
-const CARD_BACK_PATH = encodeURI('/kartu/Suit=Other, Number=Back Red.svg');
+import { 
+  CARD_WIDTH, 
+  CARD_HEIGHT, 
+  CARD_DEPTH, 
+  cardBodyGeometry, 
+  CardFaceTexture, 
+  CARD_BACK_PATH 
+} from './Card3D';
 
 /**
  * Shows opponent card backs arranged around the table.
@@ -20,6 +19,9 @@ const CARD_BACK_PATH = encodeURI('/kartu/Suit=Other, Number=Back Red.svg');
 export function OpponentHands() {
   const players = useGameStore((s) => s.players);
   const localPlayerId = useGameStore((s) => s.localPlayerId);
+  const isDealingIntro = useGameStore((s) => s.isDealingIntro);
+  const dealtCardsCount = useGameStore((s) => s.dealtCardsCount);
+  
   const otherPlayers = useMemo(() => players.filter(p => p.id !== localPlayerId), [players, localPlayerId]);
 
   // Position opponents around the table
@@ -31,13 +33,25 @@ export function OpponentHands() {
       rot: [number, number, number];
     }> = [];
 
+    const localPlayer = players.find(p => p.id === localPlayerId);
+    
+    // Add local player at the bottom of the table
+    if (localPlayer) {
+      positions.push({
+        player: localPlayer,
+        pos: [0, 0.02, 4.2],
+        rot: [0, 0, 0],
+      });
+    }
+
     const angleSpread = Math.PI * 0.7;
     const startAngle = Math.PI * 0.15;
 
     for (let i = 0; i < count; i++) {
       const t = count > 1 ? i / (count - 1) : 0.5;
       const angle = startAngle + t * angleSpread;
-      const radius = 3.8;
+      
+      const radius = 4.2;
 
       positions.push({
         player: otherPlayers[i],
@@ -51,46 +65,43 @@ export function OpponentHands() {
     }
 
     return positions;
-  }, [otherPlayers]);
+  }, [otherPlayers, players, localPlayerId]);
 
   return (
-    <group>
+    <>
       {opponentPositions.map(({ player, pos, rot }) => {
-        const cardCount = player.hand?.length || 4;
+        let cardCount = player.hand?.length || 4;
+        
+        if (isDealingIntro) {
+          cardCount = Math.min(cardCount, dealtCardsCount);
+        }
 
         return (
           <group key={player.id} position={pos} rotation={rot}>
             {/* Face-down cards */}
             {Array.from({ length: cardCount }).map((_, cardIdx) => {
-              const spread = 0.6;
-              const t = cardCount > 1 ? cardIdx / (cardCount - 1) : 0.5;
-              const x = (t - 0.5) * spread;
+              const cardSpacing = 0.2;
+              const startX = -0.3;
+              const x = startX + cardIdx * cardSpacing;
+              // Fan angle based on position relative to center
+              const angle = -x * 0.15;
 
               return (
                 <group
                   key={cardIdx}
-                  position={[x, cardIdx * 0.005, 0]}
-                  rotation={[-Math.PI / 2 + 0.8, 0, (t - 0.5) * -0.1]}
+                  position={[x, 0.02 + cardIdx * 0.005, 0]}
+                  rotation={[0, 0, angle]}
                 >
-                  <RoundedBox
-                    args={[0.7, 0.02, 1.0]}
-                    radius={0.005}
-                    smoothness={4}
-                    castShadow
-                  >
-                    <meshStandardMaterial
-                      color="#f0f0f0"
-                      roughness={0.4}
-                      metalness={0.05}
-                    />
-                  </RoundedBox>
+                  <mesh geometry={cardBodyGeometry} castShadow>
+                    <meshStandardMaterial color="#f0f0f0" roughness={0.4} metalness={0.05} />
+                  </mesh>
 
                   {/* Card back image */}
                   <mesh
-                    position={[0, 0.012, 0]}
+                    position={[0, CARD_DEPTH / 2 + 0.0025, 0]}
                     rotation={[-Math.PI / 2, 0, 0]}
                   >
-                    <planeGeometry args={[0.7 - 0.04, 1.0 - 0.04]} />
+                    <planeGeometry args={[CARD_WIDTH, CARD_HEIGHT]} />
                     <Suspense fallback={<meshStandardMaterial color="#ffffff" roughness={0.3} />}>
                       <CardFaceTexture imagePath={CARD_BACK_PATH} />
                     </Suspense>
@@ -118,6 +129,6 @@ export function OpponentHands() {
           </group>
         );
       })}
-    </group>
+    </>
   );
 }

@@ -1,18 +1,21 @@
 import { Howl, Howler } from 'howler';
 import type { SoundName } from '@/types';
 
-// Use Google Action free sounds as placeholders
+const BASE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/ion-sound/3.0.7/sounds/';
+const CARD_SOUND = 'https://cdn.pixabay.com/audio/2026/04/20/audio_b2942d1765.mp3';
+const SHUFFLE_SOUND = 'https://cdn.pixabay.com/audio/2026/04/20/audio_f86120f14b.mp3';
+
 const SOUND_SOURCES: Record<SoundName, string> = {
-  shuffle: 'https://actions.google.com/sounds/v1/foley/playing_cards_shuffling.ogg',
-  deal: 'https://actions.google.com/sounds/v1/foley/paper_slide.ogg',
-  draw: 'https://actions.google.com/sounds/v1/foley/paper_slide.ogg',
-  discard: 'https://actions.google.com/sounds/v1/foley/paper_slide.ogg',
-  win: 'https://actions.google.com/sounds/v1/cartoon/cartoon_success_fanfare.ogg',
-  click: 'https://actions.google.com/sounds/v1/ui/click.ogg',
-  tick: 'https://actions.google.com/sounds/v1/ui/click.ogg',
-  notify: 'https://actions.google.com/sounds/v1/ui/click.ogg',
+  shuffle: SHUFFLE_SOUND,
+  deal: CARD_SOUND,
+  draw: CARD_SOUND,
+  discard: CARD_SOUND,
+  win: BASE_URL + 'bell_ring.mp3',
+  click: BASE_URL + 'button_tiny.mp3',
+  tick: BASE_URL + 'button_tiny.mp3',
+  notify: BASE_URL + 'door_bell.mp3',
   ambient: '', // Not used yet
-  error: 'https://actions.google.com/sounds/v1/ui/click.ogg',
+  error: BASE_URL + 'computer_error.mp3',
 };
 
 class AudioManager {

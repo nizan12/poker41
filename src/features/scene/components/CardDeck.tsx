@@ -1,19 +1,19 @@
 'use client';
 
 import { useRef } from 'react';
+import { useMemo, Suspense } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html, RoundedBox, useTexture } from '@react-three/drei';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { Suspense } from 'react';
 import { useGameStore } from '@/features/game/stores/gameStore';
-
-function CardFaceTexture({ imagePath }: { imagePath: string }) {
-  const texture = useTexture(imagePath);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return <meshStandardMaterial map={texture} roughness={0.3} metalness={0.05} />;
-}
-
-const CARD_BACK_PATH = encodeURI('/kartu/Suit=Other, Number=Back Red.svg');
+import { 
+  CARD_WIDTH, 
+  CARD_HEIGHT, 
+  CARD_DEPTH, 
+  cardBodyGeometry, 
+  CardFaceTexture, 
+  CARD_BACK_PATH 
+} from './Card3D';
 
 export function CardDeck() {
   const groupRef = useRef<THREE.Group>(null);
@@ -40,10 +40,8 @@ export function CardDeck() {
       {/* Stack of card backs */}
       {Array.from({ length: visibleCards }).map((_, i) => (
         <group key={i} position={[0, i * 0.008, 0]}>
-          <RoundedBox
-            args={[0.7, 0.02, 1.0]}
-            radius={0.005}
-            smoothness={4}
+          <mesh
+            geometry={cardBodyGeometry}
             castShadow={i === visibleCards - 1}
             receiveShadow
             onClick={(e) => {
@@ -70,15 +68,15 @@ export function CardDeck() {
               roughness={0.4}
               metalness={0.05}
             />
-          </RoundedBox>
+          </mesh>
 
           {/* Show card back image on top card only */}
           {i === visibleCards - 1 && (
             <mesh
-              position={[0, 0.012, 0]}
+              position={[0, CARD_DEPTH / 2 + 0.0025, 0]}
               rotation={[-Math.PI / 2, 0, 0]}
             >
-              <planeGeometry args={[0.7 - 0.04, 1.0 - 0.04]} />
+              <planeGeometry args={[CARD_WIDTH, CARD_HEIGHT]} />
               <Suspense fallback={<meshStandardMaterial color="#ffffff" roughness={0.3} />}>
                 <CardFaceTexture imagePath={CARD_BACK_PATH} />
               </Suspense>

@@ -19,8 +19,25 @@ interface GameStore {
 
   // Local hand (client-side view of own cards)
   localHand: Card[];
+  
+  // Intro Sequence State
+  isDealingIntro: boolean;
+  dealtCardsCount: number;
+
+  // Animations
+  animatingCards: Array<{
+    id: string; // unique animation id
+    cardId: string;
+    fromPos: [number, number, number];
+    toPos: [number, number, number];
+    fromRot: [number, number, number];
+    toRot: [number, number, number];
+    startTime: number;
+    duration: number;
+  }>;
 
   // Actions
+
   setRoom: (room: Room | null) => void;
   setPlayers: (players: Player[]) => void;
   setLocalPlayerId: (id: string | null) => void;
@@ -31,6 +48,10 @@ interface GameStore {
   setCanDiscard: (can: boolean) => void;
   setCanDeclareWin: (can: boolean) => void;
   setLocalHand: (hand: Card[]) => void;
+  setIsDealingIntro: (isDealing: boolean) => void;
+  setDealtCardsCount: (count: number) => void;
+  startAnimation: (animation: Omit<GameStore['animatingCards'][0], 'id' | 'startTime'>) => void;
+  removeAnimation: (id: string) => void;
   reset: () => void;
 
   // Action callbacks bound from the page
@@ -55,6 +76,9 @@ const initialState = {
   canDiscard: false,
   canDeclareWin: false,
   localHand: [],
+  isDealingIntro: false,
+  dealtCardsCount: 0,
+  animatingCards: [],
   drawFromDeck: undefined,
   drawFromDiscard: undefined,
 };
@@ -72,6 +96,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setCanDiscard: (can) => set({ canDiscard: can }),
   setCanDeclareWin: (can) => set({ canDeclareWin: can }),
   setLocalHand: (hand) => set({ localHand: hand }),
+  setIsDealingIntro: (isDealing) => set({ isDealingIntro: isDealing }),
+  setDealtCardsCount: (count) => set({ dealtCardsCount: count }),
+
+  startAnimation: (anim) => set((state) => ({
+    animatingCards: [
+      ...state.animatingCards,
+      {
+        ...anim,
+        id: `anim-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        startTime: Date.now(),
+      }
+    ]
+  })),
+
+  removeAnimation: (id) => set((state) => ({
+    animatingCards: state.animatingCards.filter(a => a.id !== id)
+  })),
+
   reset: () => set(initialState),
 
   setDrawActions: (deck, discard) => set({ drawFromDeck: deck, drawFromDiscard: discard }),

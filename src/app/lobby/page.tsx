@@ -13,6 +13,7 @@ import {
 } from '@/lib/firebase/firestore';
 import { generateRoomCode } from '@/lib/utils';
 import Link from 'next/link';
+import { Home, LogIn, Sparkles, Target } from 'lucide-react';
 
 interface RoomData {
   id: string;
@@ -222,7 +223,15 @@ export default function LobbyPage() {
                     : 'bg-surface text-text-muted hover:bg-surface-light'
                 }`}
               >
-                {t === 'create' ? '🏠 Buat Room' : '🚪 Gabung Room'}
+                {t === 'create' ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Home className="w-4 h-4" /> Buat Room
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    <LogIn className="w-4 h-4" /> Gabung Room
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -284,7 +293,9 @@ export default function LobbyPage() {
                         Membuat...
                       </span>
                     ) : (
-                      '✨ Buat Room Baru'
+                      <span className="flex items-center justify-center gap-2">
+                        <Sparkles className="w-5 h-5" /> Buat Room Baru
+                      </span>
                     )}
                   </button>
                 </div>
@@ -314,7 +325,9 @@ export default function LobbyPage() {
                         Bergabung...
                       </span>
                     ) : (
-                      '🎯 Gabung Room'
+                      <span className="flex items-center justify-center gap-2">
+                        <Target className="w-5 h-5" /> Gabung Room
+                      </span>
                     )}
                   </button>
 

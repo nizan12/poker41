@@ -1,15 +1,34 @@
 'use client';
 
-import { useRef, useState, useMemo, Suspense } from 'react';
+import { useRef, useState, useMemo, Suspense, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html, RoundedBox, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 
-function CardFaceTexture({ imagePath }: { imagePath: string }) {
+export function CardFaceTexture({ imagePath }: { imagePath: string }) {
   const texture = useTexture(imagePath);
-  // Ensure texture orientation is correct for the plane
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return <meshStandardMaterial map={texture} roughness={0.3} metalness={0.05} />;
+  
+  useEffect(() => {
+    if (texture) {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      // Crop out the SVG drop shadow padding
+      // SVG total size: 219x304. Graphic size: 203x288
+      // Padding: 8px left/right, 4px top, 12px bottom
+      texture.repeat.set(203 / 219, 288 / 304);
+      texture.offset.set(8 / 219, 12 / 304);
+      texture.needsUpdate = true;
+    }
+  }, [texture]);
+
+  return (
+    <meshStandardMaterial 
+      map={texture} 
+      roughness={0.3} 
+      metalness={0.05} 
+      transparent={true} 
+      alphaTest={0.1}
+    />
+  );
 }
 
 interface Card3DProps {
@@ -27,20 +46,66 @@ interface Card3DProps {
 }
 
 // Card dimensions
-const CARD_WIDTH = 0.7;
-const CARD_HEIGHT = 1.0;
-const CARD_DEPTH = 0.02;
+export const CARD_WIDTH = 0.7;
+export const CARD_HEIGHT = 1.0;
+export const CARD_DEPTH = 0.02;
 
 /**
  * Parse a cardId like "hearts-Ace" to get the SVG path
  */
-function getCardTexturePath(cardId: string): string {
+export function getCardTexturePath(cardId: string): string {
   const [suit, rank] = cardId.split('-');
   const suitCapitalized = suit.charAt(0).toUpperCase() + suit.slice(1);
   return encodeURI(`/kartu/Suit=${suitCapitalized}, Number=${rank}.svg`);
 }
 
-const CARD_BACK_PATH = encodeURI('/kartu/Suit=Other, Number=Back Red.svg');
+export const CARD_BACK_PATH = encodeURI('/kartu/Suit=Other, Number=Back Red.svg');
+
+// Shared Geometry instances for performance and consistency
+export const cardShape = new THREE.Shape();
+const w = CARD_WIDTH;
+const h = CARD_HEIGHT;
+const r = 0.035; // Matches SVG's 10px radius (10 / 290)
+const x = -w / 2;
+const y = -h / 2;
+
+cardShape.moveTo(x, y + r);
+cardShape.lineTo(x, y + h - r);
+cardShape.quadraticCurveTo(x, y + h, x + r, y + h);
+cardShape.lineTo(x + w - r, y + h);
+cardShape.quadraticCurveTo(x + w, y + h, x + w, y + h - r);
+cardShape.lineTo(x + w, y + r);
+cardShape.quadraticCurveTo(x + w, y, x + w - r, y);
+cardShape.lineTo(x + r, y);
+cardShape.quadraticCurveTo(x, y, x, y + r);
+
+export const cardBodyGeometry = new THREE.ExtrudeGeometry(cardShape, {
+  depth: CARD_DEPTH,
+  bevelEnabled: true,
+  bevelSegments: 2,
+  steps: 1,
+  bevelSize: 0.002,
+  bevelThickness: 0.002,
+});
+cardBodyGeometry.translate(0, 0, -CARD_DEPTH / 2); // Center on Z
+cardBodyGeometry.rotateX(-Math.PI / 2); // Lay flat (Z becomes Y)
+
+export const cardGlowShape = new THREE.Shape();
+const gw = CARD_WIDTH + 0.06;
+const gh = CARD_HEIGHT + 0.06;
+const gr = 0.05;
+const gx = -gw / 2;
+const gy = -gh / 2;
+
+cardGlowShape.moveTo(gx, gy + gr);
+cardGlowShape.lineTo(gx, gy + gh - gr);
+cardGlowShape.quadraticCurveTo(gx, gy + gh, gx + gr, gy + gh);
+cardGlowShape.lineTo(gx + gw - gr, gy + gh);
+cardGlowShape.quadraticCurveTo(gx + gw, gy + gh, gx + gw, gy + gh - gr);
+cardGlowShape.lineTo(gx + gw, gy + gr);
+cardGlowShape.quadraticCurveTo(gx + gw, gy, gx + gw - gr, gy);
+cardGlowShape.lineTo(gx + gr, gy);
+cardGlowShape.quadraticCurveTo(gx, gy, gx, gy + gr);
 
 export function Card3D({
   cardId,
@@ -72,8 +137,6 @@ export function Card3D({
     meshRef.current.position.y += (targetY - meshRef.current.position.y) * speed * delta;
   });
 
-  const imagePath = faceUp ? getCardTexturePath(cardId) : CARD_BACK_PATH;
-
   return (
     <group
       ref={meshRef}
@@ -82,10 +145,8 @@ export function Card3D({
       scale={scale}
     >
       {/* Card body */}
-      <RoundedBox
-        args={[CARD_WIDTH, CARD_DEPTH, CARD_HEIGHT]}
-        radius={0.005}
-        smoothness={4}
+      <mesh
+        geometry={cardBodyGeometry}
         castShadow
         receiveShadow
         onClick={interactive ? onClick : undefined}
@@ -102,28 +163,38 @@ export function Card3D({
           document.body.style.cursor = 'default';
         } : undefined}
       >
-        <meshStandardMaterial
-          color="#f0f0f0"
-          roughness={0.3}
-          metalness={0.05}
-        />
-      </RoundedBox>
+        <meshStandardMaterial color="#f0f0f0" roughness={0.3} metalness={0.05} />
+      </mesh>
 
-      {/* Card face — Rendered as a textured plane on top of the RoundedBox */}
+      {/* Card face (Top) — Rendered as a textured plane on top */}
       <mesh
-        position={[0, CARD_DEPTH / 2 + 0.001, 0]}
+        position={[0, CARD_DEPTH / 2 + 0.0025, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
       >
-        <planeGeometry args={[CARD_WIDTH - 0.04, CARD_HEIGHT - 0.04]} />
+        <planeGeometry args={[CARD_WIDTH, CARD_HEIGHT]} />
         <Suspense fallback={<meshStandardMaterial color="#ffffff" roughness={0.3} />}>
-          <CardFaceTexture imagePath={imagePath} />
+          <CardFaceTexture imagePath={faceUp ? getCardTexturePath(cardId) : CARD_BACK_PATH} />
+        </Suspense>
+      </mesh>
+
+      {/* Card face (Bottom) — Rendered on the bottom */}
+      <mesh
+        position={[0, -(CARD_DEPTH / 2 + 0.0025), 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <planeGeometry args={[CARD_WIDTH, CARD_HEIGHT]} />
+        <Suspense fallback={<meshStandardMaterial color="#ffffff" roughness={0.3} />}>
+          <CardFaceTexture imagePath={faceUp ? CARD_BACK_PATH : getCardTexturePath(cardId)} />
         </Suspense>
       </mesh>
 
       {/* Selection glow ring */}
       {(selected || isHovered) && (
-        <mesh position={[0, CARD_DEPTH / 2 + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[CARD_WIDTH + 0.06, CARD_HEIGHT + 0.06]} />
+        <mesh 
+          position={[0, CARD_DEPTH / 2 + 0.002, 0]} 
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
+          <shapeGeometry args={[cardGlowShape]} />
           <meshBasicMaterial
             color={selected ? '#10B981' : '#F59E0B'}
             transparent

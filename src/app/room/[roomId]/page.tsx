@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as THREE from 'three';
 import { useAuthStore } from '@/features/auth/stores/authStore';
 import { useGameStore } from '@/features/game/stores/gameStore';
 import { useUIStore } from '@/features/game/stores/uiStore';
@@ -31,7 +32,7 @@ import {
   type ChatMessage,
 } from '@/types';
 import { PlayerHandUI } from '@/features/game/components/PlayerHandUI';
-
+import { Crown, Target, Timer, VolumeX, Volume2, Gamepad2, Recycle, Trash2, Rocket, Trophy, MessageSquare, Library } from 'lucide-react';
 // Dynamic import for 3D scene (no SSR)
 const GameScene = dynamic(
   () => import('@/features/scene/components/GameScene'),
@@ -48,6 +49,7 @@ export default function GameRoomPage() {
     setRoom, setPlayers, setLocalPlayerId, setPhase,
     setLocalHand, selectCard, setCanDraw, setCanDiscard,
     setCanDeclareWin, setDrawActions,
+    isDealingIntro, setIsDealingIntro, dealtCardsCount, setDealtCardsCount
   } = useGameStore();
   const { isMuted, toggleMute } = useUIStore();
 
@@ -133,6 +135,164 @@ export default function GameRoomPage() {
     return () => clearInterval(interval);
   }, [phase, room?.turnStartedAt, room?.turnTimeLimit]);
 
+  // Handle Animations from lastAction
+  const startAnimation = useGameStore(s => s.startAnimation);
+  const lastActionRef = useRef<number>(0);
+  
+  // Intro Sequence
+  const hasPlayedIntroRef = useRef<boolean>(false);
+  useEffect(() => {
+    // Only play intro if we are playing AND the game started within the last 15 seconds.
+    // hasPlayedIntroRef ensures it only runs once per page load.
+    const isNewGame = room?.turnStartedAt && Date.now() - room.turnStartedAt < 15000;
+    
+    if (phase === 'playing' && isNewGame && !hasPlayedIntroRef.current) {
+      hasPlayedIntroRef.current = true;
+      // Start Intro Sequence
+      setIsDealingIntro(true);
+      setDealtCardsCount(0);
+      
+      const playShuffleLoop = async () => {
+        // Just a small delay before dealing starts
+        await new Promise(res => setTimeout(res, 500));
+        
+        // Deal cards sequentially
+        // 4 rounds of dealing
+        const deckPos: [number, number, number] = [-0.8, 0.05, 0];
+        let currentDealtCount = 0;
+        
+        for (let r = 0; r < 4; r++) {
+          for (let pIdx = 0; pIdx < players.length; pIdx++) {
+            const p = players[pIdx];
+            const isMe = p.id === user?.uid;
+            
+            let playerPos: [number, number, number] = [0, -1, 5];
+            let playerRot: [number, number, number] = [0, 0, 0];
+            
+            if (!isMe) {
+              const otherPlayers = players.filter(op => op.id !== user?.uid);
+              const count = otherPlayers.length;
+              const opIdx = otherPlayers.findIndex(op => op.id === p.id);
+              if (opIdx !== -1) {
+                const t = count > 1 ? opIdx / (count - 1) : 0.5;
+                const angle = Math.PI * 0.15 + t * (Math.PI * 0.7);
+                const radius = 4.2;
+                playerPos = [
+                  Math.sin(angle) * radius,
+                  0.02,
+                  -Math.cos(angle) * radius
+                ];
+                playerRot = [0, -angle + Math.PI, 0];
+              }
+            } else {
+              playerPos = [0, 0.02, 3.2];
+            }
+            
+            // Animate card flying (use 'hidden' so it renders the back of the card)
+            audioManager.play('deal');
+            startAnimation({
+              cardId: `hidden`, 
+              fromPos: deckPos,
+              toPos: playerPos,
+              fromRot: [0, 0, 0],
+              toRot: playerRot,
+              duration: 300
+            });
+            
+            await new Promise(res => setTimeout(res, 300));
+          }
+          currentDealtCount++;
+          setDealtCardsCount(currentDealtCount);
+        }
+        
+        setIsDealingIntro(false);
+      };
+      
+      playShuffleLoop();
+    }
+  }, [phase, players, user?.uid, setIsDealingIntro, setDealtCardsCount, startAnimation, room?.turnStartedAt]);
+
+  useEffect(() => {
+    if (!room?.lastAction || room.lastAction.timestamp <= lastActionRef.current) return;
+    
+    lastActionRef.current = room.lastAction.timestamp;
+    const action = room.lastAction;
+    const isMe = action.playerId === user?.uid;
+    
+    // Positions
+    const deckPos: [number, number, number] = [-0.8, 0.05, 0];
+    const discardPos: [number, number, number] = [0.8, 0.02, 0];
+    
+    // Calculate player 3D position
+    let playerPos: [number, number, number] = [0, -1, 5]; // default for local player (fly to camera)
+    let playerRot: [number, number, number] = [0, 0, 0];
+    
+    if (!isMe) {
+      const otherPlayers = players.filter(p => p.id !== user?.uid);
+      const count = otherPlayers.length;
+      const pIdx = otherPlayers.findIndex(p => p.id === action.playerId);
+      if (pIdx !== -1) {
+        const t = count > 1 ? pIdx / (count - 1) : 0.5;
+        const angle = Math.PI * 0.15 + t * (Math.PI * 0.7);
+        const radius = 4.2;
+        
+        // Base center position
+        const basePath = new THREE.Vector3(
+          Math.sin(angle) * radius, 
+          0.02, 
+          -Math.cos(angle) * radius
+        );
+        playerRot = [0, -angle + Math.PI, 0];
+
+        // Offset to far-right card (5th card spot: local X = 0.5)
+        const localOffset = new THREE.Vector3(0.5, 0, 0);
+        localOffset.applyEuler(new THREE.Euler(...playerRot));
+        
+        basePath.add(localOffset);
+        playerPos = [basePath.x, basePath.y, basePath.z];
+      }
+    } else {
+      // Local player is at the bottom of the table
+      const basePath = new THREE.Vector3(0, 0.02, 4.2);
+      playerRot = [0, 0, 0];
+      
+      const localOffset = new THREE.Vector3(0.5, 0, 0);
+      localOffset.applyEuler(new THREE.Euler(...playerRot));
+      
+      basePath.add(localOffset);
+      playerPos = [basePath.x, basePath.y, basePath.z];
+    }
+
+    if (action.type === 'draw_deck') {
+      startAnimation({
+        cardId: action.cardId,
+        fromPos: deckPos,
+        toPos: playerPos,
+        fromRot: [Math.PI, 0, 0],
+        toRot: playerRot,
+        duration: 400
+      });
+    } else if (action.type === 'draw_discard') {
+      startAnimation({
+        cardId: action.cardId,
+        fromPos: discardPos,
+        toPos: playerPos,
+        fromRot: [0, 0, 0],
+        toRot: playerRot,
+        duration: 400
+      });
+    } else if (action.type === 'discard') {
+      startAnimation({
+        cardId: action.cardId,
+        fromPos: playerPos,
+        toPos: discardPos,
+        fromRot: playerRot,
+        toRot: [0, 0, 0],
+        duration: 400
+      });
+    }
+  }, [room?.lastAction, players, user?.uid, startAnimation]);
+
   // Game actions
   const handleStartGame = async () => {
     if (!room || !user || room.hostId !== user.uid) return;
@@ -169,9 +329,6 @@ export default function GameRoomPage() {
         isReady: true,
       });
     }
-    
-    audioManager.play('shuffle');
-    setTimeout(() => audioManager.play('deal'), 800);
   };
 
   const handleDrawDeck = async () => {
@@ -187,7 +344,10 @@ export default function GameRoomPage() {
       if (!myPlayer) return;
 
       audioManager.play('draw');
-      await updateRoom(roomId, { deckCards });
+      await updateRoom(roomId, { 
+        deckCards,
+        lastAction: { type: 'draw_deck', playerId: user.uid, cardId: 'hidden', timestamp: Date.now() }
+      });
       await updatePlayer(roomId, user.uid, {
         hand: [...myPlayer.hand, drawnCard],
       });
@@ -209,7 +369,10 @@ export default function GameRoomPage() {
       if (!myPlayer) return;
 
       audioManager.play('draw');
-      await updateRoom(roomId, { discardPile });
+      await updateRoom(roomId, { 
+        discardPile,
+        lastAction: { type: 'draw_discard', playerId: user.uid, cardId: drawnCard, timestamp: Date.now() }
+      });
       await updatePlayer(roomId, user.uid, {
         hand: [...myPlayer.hand, drawnCard],
       });
@@ -267,6 +430,7 @@ export default function GameRoomPage() {
         discardPile: newDiscard,
         currentTurn: players[nextIdx].id,
         turnStartedAt: Date.now(),
+        lastAction: { type: 'discard', playerId: user.uid, cardId: selectedCardId, timestamp: Date.now() }
       });
       await updatePlayer(roomId, user.uid, { hand: newHand });
       selectCard(null);
@@ -370,26 +534,26 @@ export default function GameRoomPage() {
             onClick={() => setIsChatOpen(!isChatOpen)}
             className="glass-card px-3 py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors"
           >
-            💬 Chat
+            <MessageSquare className="w-4 h-4" /> Chat
           </button>
         </div>
 
-        {/* Players Info — Bottom left */}
-        <div className="absolute bottom-24 left-4 space-y-2">
+        {/* Players Info — Top left */}
+        <div className="absolute top-20 left-4 space-y-2 z-40">
           {players.map((p) => (
             <div
               key={p.id}
               className={`glass-card px-3 py-2 flex items-center gap-3 text-sm ${
-                room?.currentTurn === p.id ? 'border-primary glow-primary' : ''
+                room?.currentTurn === p.id && !isDealingIntro ? 'border-primary glow-primary' : ''
               }`}
             >
               <div className={`w-2 h-2 rounded-full ${p.isConnected ? 'bg-success' : 'bg-danger'}`} />
-              <span className={`font-medium ${p.id === user?.uid ? 'text-primary' : 'text-text'}`}>
-                {p.name} {p.id === room?.hostId ? '👑' : ''}
+              <span className={`font-medium flex items-center gap-1 ${p.id === user?.uid ? 'text-primary' : 'text-text'}`}>
+                {p.name} {p.id === room?.hostId && <Crown className="w-4 h-4 text-secondary" />}
               </span>
               {isPlaying && (
                 <span className="text-text-muted text-xs">
-                  {p.hand?.length || 0} kartu
+                  {isDealingIntro ? Math.min(p.hand?.length || 0, dealtCardsCount) : p.hand?.length || 0} kartu
                 </span>
               )}
             </div>
@@ -397,8 +561,8 @@ export default function GameRoomPage() {
         </div>
 
         {/* Turn Indicator + Timer */}
-        {isPlaying && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2">
+        {isPlaying && !isDealingIntro && (
+          <div className="absolute top-24 md:top-20 left-1/2 -translate-x-1/2 z-30">
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -406,8 +570,12 @@ export default function GameRoomPage() {
                 myTurn ? 'border-primary animate-pulse-glow' : ''
               }`}
             >
-              <div className="text-text-bright font-heading font-bold text-sm">
-                {myTurn ? '🎯 Giliranmu!' : `⏳ Giliran ${players.find(p => p.id === room?.currentTurn)?.name || '...'}`}
+              <div className="text-text-bright font-heading font-bold text-sm flex items-center justify-center gap-2">
+                {myTurn ? (
+                  <><Target className="w-4 h-4" /> Giliranmu!</>
+                ) : (
+                  <><Timer className="w-4 h-4" /> Giliran {players.find(p => p.id === room?.currentTurn)?.name || '...'}</>
+                )}
               </div>
               <div className={`font-mono text-lg font-bold mt-1 ${
                 turnTimer <= 5 ? 'text-danger' : turnTimer <= 10 ? 'text-warning' : 'text-primary'
@@ -421,32 +589,32 @@ export default function GameRoomPage() {
         {/* 2D Player Hand UI */}
         <PlayerHandUI />
 
-        {/* Player Hand Score */}
-        {isPlaying && localHand.length > 0 && (
-          <div className="absolute bottom-20 md:bottom-24 left-1/2 -translate-x-1/2">
+        {/* Player Hand Score & Audio */}
+        {isPlaying && localHand.length > 0 && !isDealingIntro && (
+          <div className="absolute bottom-32 md:bottom-8 left-4 md:left-8 z-40">
             <div className="flex items-center gap-2 md:gap-4">
-          <button 
-            onClick={toggleMute}
-            className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-surface-dark/50 flex items-center justify-center border border-border hover:bg-surface transition-colors"
-            title={isMuted ? 'Unmute Suara' : 'Mute Suara'}
-          >
-            {isMuted ? '🔇' : '🔊'}
-          </button>
-          <div className="glass-card px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-2 md:gap-4 scale-90 md:scale-100 whitespace-nowrap">
-              <div className="text-text-muted text-xs">Skor:</div>
-              <div className="text-secondary font-heading font-bold text-base md:text-lg">
-                {calculateHandScore(localHand).score}
+              <button 
+                onClick={toggleMute}
+                className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-surface-dark/50 flex items-center justify-center border border-border hover:bg-surface transition-colors"
+                title={isMuted ? 'Unmute Suara' : 'Mute Suara'}
+              >
+                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+              <div className="glass-card px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-2 md:gap-4 scale-90 md:scale-100 whitespace-nowrap">
+                <div className="text-text-muted text-xs">Skor:</div>
+                <div className="text-secondary font-heading font-bold text-base md:text-lg">
+                  {calculateHandScore(localHand.slice(0, dealtCardsCount)).score}
+                </div>
+                <div className="text-text-muted text-xs ml-2 md:ml-0">
+                  Best: {calculateHandScore(localHand.slice(0, dealtCardsCount)).bestSuit}
+                </div>
               </div>
-              <div className="text-text-muted text-xs ml-2 md:ml-0">
-                Best: {calculateHandScore(localHand).bestSuit}
-              </div>
-            </div>
             </div>
           </div>
         )}
 
         {/* Action Buttons */}
-        {isPlaying && myTurn && (
+        {isPlaying && myTurn && !isDealingIntro && (
           <div className="absolute bottom-32 md:bottom-32 right-4 md:right-8 flex flex-col gap-2 scale-90 md:scale-100 origin-bottom-right z-10">
             {localHand.length === 4 && (
               <>
@@ -455,7 +623,7 @@ export default function GameRoomPage() {
                   disabled={isProcessing}
                   className="btn-primary px-3 md:px-4 py-2.5 md:py-3 text-xs md:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                 >
-                  🃏 Ambil Deck
+                  <Library className="w-5 h-5" /> Ambil Deck
                 </button>
                 {(room?.discardPile?.length ?? 0) > 0 && (
                   <button
@@ -463,7 +631,7 @@ export default function GameRoomPage() {
                     disabled={isProcessing}
                     className="btn-secondary px-3 md:px-4 py-2.5 md:py-3 text-xs md:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                   >
-                    ♻️ Ambil Buangan
+                    <Recycle className="w-5 h-5" /> Ambil Buangan
                   </button>
                 )}
               </>
@@ -474,7 +642,7 @@ export default function GameRoomPage() {
                 disabled={isProcessing}
                 className="btn-gold px-3 md:px-4 py-2.5 md:py-3 text-xs md:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
               >
-                🗑️ Buang Kartu
+                <Trash2 className="w-5 h-5" /> Buang Kartu
               </button>
             )}
           </div>
@@ -506,7 +674,7 @@ export default function GameRoomPage() {
                     </div>
                     <span className="text-text font-medium">{p.name}</span>
                     {p.id === room?.hostId && (
-                      <span className="ml-auto text-secondary text-xs">Host 👑</span>
+                      <span className="ml-auto text-secondary text-xs flex items-center gap-1">Host <Crown className="w-3 h-3" /></span>
                     )}
                   </div>
                 ))}
@@ -525,7 +693,7 @@ export default function GameRoomPage() {
                   onClick={handleStartGame}
                   className="w-full btn-gold py-4 rounded-xl text-lg font-bold"
                 >
-                  🚀 Mulai Permainan!
+                  <span className="flex items-center justify-center gap-2"><Rocket className="w-6 h-6" /> Mulai Permainan!</span>
                 </button>
               )}
               {isHost && players.length < 2 && (
@@ -557,7 +725,9 @@ export default function GameRoomPage() {
                 transition={{ type: 'spring', damping: 20 }}
                 className="glass-card p-8 max-w-md w-full mx-4 text-center max-h-[90vh] overflow-y-auto"
               >
-                <div className="text-6xl mb-4">{room?.winnerId === 'DRAW' ? '🎴' : '🏆'}</div>
+                <div className="flex justify-center mb-4">
+                  {room?.winnerId === 'DRAW' ? <Library className="w-16 h-16 text-primary" /> : <Trophy className="w-16 h-16 text-secondary" />}
+                </div>
                 <h2 className="font-heading text-3xl font-black text-gradient-gold mb-2">
                   {room?.winnerId === 'DRAW' 
                     ? 'Kartu Habis!' 

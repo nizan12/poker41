@@ -13,6 +13,8 @@ export function DiscardPile() {
   
   const canDraw = isMyTurn && localHand.length === 4;
 
+  const animatingCards = useGameStore((s) => s.animatingCards);
+
   // Show only the last few cards in a fan pattern
   const visibleCards = useMemo(() => {
     return discardPile.slice(-5); // Show last 5 cards
@@ -23,6 +25,10 @@ export function DiscardPile() {
   return (
     <group position={[0.8, 0.01, 0]}>
       {visibleCards.map((cardId, i) => {
+        // If this card is currently flying, don't render it in the static pile yet
+        const isAnimating = animatingCards.some((anim) => anim.cardId === cardId);
+        if (isAnimating) return null;
+
         const angle = (i - Math.floor(visibleCards.length / 2)) * 0.15;
         const offsetX = Math.sin(angle) * 0.2;
         const offsetZ = Math.cos(angle) * 0.1 - 0.1;

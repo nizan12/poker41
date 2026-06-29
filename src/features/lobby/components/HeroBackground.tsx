@@ -5,6 +5,8 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { RoundedBox, Environment, Float } from '@react-three/drei';
 import * as THREE from 'three';
 
+import { Card3D } from '@/features/scene/components/Card3D';
+
 function FloatingCards() {
   const groupRef = useRef<THREE.Group>(null);
 
@@ -14,16 +16,24 @@ function FloatingCards() {
       position: [number, number, number];
       rotation: [number, number, number];
       speed: number;
-      color: string;
+      cardId: string;
+      faceUp: boolean;
     }> = [];
 
-    for (let i = 0; i < 15; i++) {
+    const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
+    const ranks = ['Ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'Jack', 'Queen', 'King'];
+
+    for (let i = 0; i < 20; i++) {
+      const randomSuit = suits[Math.floor(Math.random() * suits.length)];
+      const randomRank = ranks[Math.floor(Math.random() * ranks.length)];
+      const isFaceUp = Math.random() > 0.3; // 70% chance face up
+
       items.push({
         id: i,
         position: [
-          (Math.random() - 0.5) * 12,
-          (Math.random() - 0.5) * 6,
-          (Math.random() - 0.5) * 8 - 3,
+          (Math.random() - 0.5) * 14, // Spread wider
+          (Math.random() - 0.5) * 10, // Spread taller
+          (Math.random() - 0.5) * 8 - 4, // Deep spread
         ],
         rotation: [
           Math.random() * Math.PI,
@@ -31,9 +41,8 @@ function FloatingCards() {
           Math.random() * Math.PI,
         ],
         speed: 0.2 + Math.random() * 0.5,
-        color: ['#10B981', '#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6'][
-          Math.floor(Math.random() * 5)
-        ],
+        cardId: `${randomSuit}-${randomRank}`,
+        faceUp: isFaceUp,
       });
     }
     return items;
@@ -41,28 +50,22 @@ function FloatingCards() {
 
   useFrame((state) => {
     if (!groupRef.current) return;
-    groupRef.current.rotation.y = state.clock.elapsedTime * 0.03;
+    groupRef.current.rotation.y = state.clock.elapsedTime * 0.05;
+    groupRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.02) * 0.1;
   });
 
   return (
     <group ref={groupRef}>
-      {cards.map(({ id, position, rotation, speed, color }) => (
-        <Float key={id} speed={speed} rotationIntensity={0.4} floatIntensity={0.6}>
-          <RoundedBox
-            args={[0.7, 0.02, 1.0]}
-            radius={0.02}
-            smoothness={4}
-            position={position}
-            rotation={rotation}
-          >
-            <meshStandardMaterial
-              color={color}
-              roughness={0.3}
-              metalness={0.5}
-              emissive={color}
-              emissiveIntensity={0.1}
-            />
-          </RoundedBox>
+      {cards.map(({ id, position, rotation, speed, cardId, faceUp }) => (
+        <Float key={id} speed={speed} rotationIntensity={1.5} floatIntensity={1.5}>
+          <group position={position} rotation={rotation}>
+             <Card3D 
+                cardId={cardId} 
+                faceUp={faceUp} 
+                position={[0, 0, 0]} 
+                scale={1.2} 
+             />
+          </group>
         </Float>
       ))}
     </group>
