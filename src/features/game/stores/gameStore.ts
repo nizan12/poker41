@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { GamePhase, Player, Room, Card } from '@/types';
 
-interface GameStore {
+export interface GameStore {
   // Room state (synced from Firestore)
   room: Room | null;
   players: Player[];

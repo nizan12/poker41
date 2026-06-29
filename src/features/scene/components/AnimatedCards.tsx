@@ -3,7 +3,7 @@
 import { useRef, Suspense } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useGameStore } from '@/features/game/stores/gameStore';
+import { useGameStore, type GameStore } from '@/features/game/stores/gameStore';
 import {
   CARD_WIDTH,
   CARD_HEIGHT,
@@ -14,7 +14,7 @@ import {
   getCardTexturePath,
 } from './Card3D';
 
-function AnimatedCardMesh({ anim }: { anim: ReturnType<typeof useGameStore>['animatingCards'][0] }) {
+function AnimatedCardMesh({ anim }: { anim: GameStore['animatingCards'][0] }) {
   const groupRef = useRef<THREE.Group>(null);
   const removeAnimation = useGameStore((s) => s.removeAnimation);
   
