@@ -32,7 +32,8 @@ import {
   type ChatMessage,
 } from '@/types';
 import { PlayerHandUI } from '@/features/game/components/PlayerHandUI';
-import { Crown, Target, Timer, VolumeX, Volume2, Gamepad2, Recycle, Trash2, Rocket, Trophy, MessageSquare, Library } from 'lucide-react';
+import { VoiceChatManager } from '@/features/voice/components/VoiceChatManager';
+import { Crown, Target, Timer, VolumeX, Volume2, Gamepad2, Recycle, Trash2, Rocket, Trophy, MessageSquare, Library, Users, X, Mic, MicOff } from 'lucide-react';
 // Dynamic import for 3D scene (no SSR)
 const GameScene = dynamic(
   () => import('@/features/scene/components/GameScene'),
@@ -51,11 +52,12 @@ export default function GameRoomPage() {
     setCanDeclareWin, setDrawActions,
     isDealingIntro, setIsDealingIntro, dealtCardsCount, setDealtCardsCount
   } = useGameStore();
-  const { isMuted, toggleMute } = useUIStore();
+  const { isMuted, toggleMute, isMicOn, toggleMic } = useUIStore();
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isPlayersOpen, setIsPlayersOpen] = useState(false);
   const [turnTimer, setTurnTimer] = useState(30);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -507,6 +509,9 @@ export default function GameRoomPage() {
 
   return (
     <div className="w-full h-screen relative overflow-hidden bg-background">
+      {/* Voice Chat System */}
+      <VoiceChatManager />
+
       {/* 3D Game Scene */}
       <GameScene />
 
@@ -530,30 +535,46 @@ export default function GameRoomPage() {
             </div>
           </div>
 
-          <button
-            onClick={() => setIsChatOpen(!isChatOpen)}
-            className="glass-card px-3 py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors"
-          >
-            <MessageSquare className="w-4 h-4" /> Chat
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleMic}
+              className={`glass-card p-2 md:px-3 md:py-2 text-sm flex items-center gap-2 transition-colors ${isMicOn ? 'text-primary' : 'text-text-muted hover:text-text'}`}
+              title={isMicOn ? 'Matikan Mic' : 'Nyalakan Mic'}
+            >
+              {isMicOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+              <span className="hidden md:inline">Mic</span>
+            </button>
+            <button
+              onClick={() => setIsPlayersOpen(!isPlayersOpen)}
+              className="glass-card p-2 md:hidden text-text-muted hover:text-text text-sm transition-colors"
+            >
+              <Users className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsChatOpen(!isChatOpen)}
+              className="glass-card px-3 py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors"
+            >
+              <MessageSquare className="w-4 h-4" /> Chat
+            </button>
+          </div>
         </div>
 
-        {/* Players Info — Top left */}
-        <div className="absolute top-20 left-4 space-y-2 z-40">
+        {/* Players Info — Top left (Desktop & Mobile Modal) */}
+        <div className={`absolute top-16 left-4 space-y-1.5 z-40 ${isPlayersOpen ? 'block' : 'hidden'} md:block`}>
           {players.map((p) => (
             <div
               key={p.id}
-              className={`glass-card px-3 py-2 flex items-center gap-3 text-sm ${
+              className={`glass-card px-2.5 py-1.5 flex items-center gap-2 text-sm ${
                 room?.currentTurn === p.id && !isDealingIntro ? 'border-primary glow-primary' : ''
               }`}
             >
-              <div className={`w-2 h-2 rounded-full ${p.isConnected ? 'bg-success' : 'bg-danger'}`} />
+              <div className={`w-1.5 h-1.5 rounded-full ${p.isConnected ? 'bg-success' : 'bg-danger'}`} />
               <span className={`font-medium flex items-center gap-1 ${p.id === user?.uid ? 'text-primary' : 'text-text'}`}>
-                {p.name} {p.id === room?.hostId && <Crown className="w-4 h-4 text-secondary" />}
+                {p.name} {p.id === room?.hostId && <Crown className="w-3 h-3 text-secondary" />}
               </span>
               {isPlaying && (
-                <span className="text-text-muted text-xs">
-                  {isDealingIntro ? Math.min(p.hand?.length || 0, dealtCardsCount) : p.hand?.length || 0} kartu
+                <span className="text-text-muted text-xs ml-2">
+                  {isDealingIntro ? Math.min(p.hand?.length || 0, dealtCardsCount) : p.hand?.length || 0} krt
                 </span>
               )}
             </div>
@@ -562,22 +583,22 @@ export default function GameRoomPage() {
 
         {/* Turn Indicator + Timer */}
         {isPlaying && !isDealingIntro && (
-          <div className="absolute top-24 md:top-20 left-1/2 -translate-x-1/2 z-30">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 w-full max-w-[280px] md:max-w-max px-4 md:px-0">
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`glass-card px-6 py-3 text-center ${
+              className={`glass-card px-4 py-2 flex flex-row items-center justify-between md:justify-center md:gap-6 ${
                 myTurn ? 'border-primary animate-pulse-glow' : ''
               }`}
             >
-              <div className="text-text-bright font-heading font-bold text-sm flex items-center justify-center gap-2">
+              <div className="text-text-bright font-heading font-bold text-xs md:text-sm flex items-center gap-1.5 truncate">
                 {myTurn ? (
-                  <><Target className="w-4 h-4" /> Giliranmu!</>
+                  <><Target className="w-3.5 h-3.5 shrink-0" /> Giliranmu!</>
                 ) : (
-                  <><Timer className="w-4 h-4" /> Giliran {players.find(p => p.id === room?.currentTurn)?.name || '...'}</>
+                  <><Timer className="w-3.5 h-3.5 shrink-0" /> <span className="truncate">Giliran {players.find(p => p.id === room?.currentTurn)?.name || '...'}</span></>
                 )}
               </div>
-              <div className={`font-mono text-lg font-bold mt-1 ${
+              <div className={`font-mono text-sm md:text-base font-bold border-l border-border/50 pl-3 md:pl-6 ${
                 turnTimer <= 5 ? 'text-danger' : turnTimer <= 10 ? 'text-warning' : 'text-primary'
               }`}>
                 {turnTimer}s
@@ -783,7 +804,7 @@ export default function GameRoomPage() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute top-0 right-0 bottom-0 w-80 glass-card border-l border-border flex flex-col"
+              className="absolute top-0 right-0 bottom-0 w-full sm:w-80 z-50 glass-card border-l border-border flex flex-col bg-background/80 backdrop-blur-xl"
             >
               <div className="flex items-center justify-between p-4 border-b border-border">
                 <h3 className="font-heading font-bold text-text-bright">Chat</h3>

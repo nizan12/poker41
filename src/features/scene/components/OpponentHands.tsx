@@ -122,7 +122,16 @@ export function OpponentHands() {
                 whiteSpace: 'nowrap',
                 border: '1px solid rgba(255,255,255,0.1)',
                 fontFamily: 'Inter, sans-serif',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}>
+                <div style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: player.isConnected ? '#10B981' : '#EF4444'
+                }} />
                 {player.name} ({cardCount})
               </div>
             </Html>
