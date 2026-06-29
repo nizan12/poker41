@@ -1,12 +1,13 @@
 'use client';
 
 import { useRef, useState, useMemo, Suspense, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Html, RoundedBox, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 
 export function CardFaceTexture({ imagePath }: { imagePath: string }) {
   const texture = useTexture(imagePath);
+  const gl = useThree((state) => state.gl);
   
   useEffect(() => {
     if (texture) {
@@ -16,9 +17,16 @@ export function CardFaceTexture({ imagePath }: { imagePath: string }) {
       // Padding: 8px left/right, 4px top, 12px bottom
       texture.repeat.set(203 / 219, 288 / 304);
       texture.offset.set(8 / 219, 12 / 304);
+      
+      // Fix for blurry textures (especially on mobile/iOS or at oblique angles)
+      texture.anisotropy = gl.capabilities.getMaxAnisotropy();
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = true;
+
       texture.needsUpdate = true;
     }
-  }, [texture]);
+  }, [texture, gl]);
 
   return (
     <meshStandardMaterial 
