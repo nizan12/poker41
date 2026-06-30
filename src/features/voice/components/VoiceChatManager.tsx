@@ -66,6 +66,8 @@ export function VoiceChatManager() {
       }
     };
   }, [room?.id, localPlayerId]);
+  // Keep track of who we have already called
+  const calledPeersRef = useRef<Set<string>>(new Set());
 
   // Handle Microphone toggle
   useEffect(() => {
@@ -81,7 +83,8 @@ export function VoiceChatManager() {
           const otherPlayers = players.filter(p => p.id !== localPlayerId);
           otherPlayers.forEach(p => {
             const targetPeerId = (p as any).peerId;
-            if (targetPeerId) {
+            if (targetPeerId && !calledPeersRef.current.has(targetPeerId)) {
+              calledPeersRef.current.add(targetPeerId);
               const call = peerRef.current.call(targetPeerId, stream);
               if (call) {
                 call.on('stream', (remoteStream: MediaStream) => {
@@ -104,6 +107,7 @@ export function VoiceChatManager() {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
       }
+      calledPeersRef.current.clear();
     }
 
     return () => {
@@ -111,7 +115,27 @@ export function VoiceChatManager() {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [isMicOn, players, localPlayerId, room?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMicOn, localPlayerId, room?.id]); // Removed players to prevent mic restart
+
+  // Automatically call new players that join while mic is on
+  useEffect(() => {
+    if (!isMicOn || !localStreamRef.current || !peerRef.current) return;
+    
+    const otherPlayers = players.filter(p => p.id !== localPlayerId);
+    otherPlayers.forEach(p => {
+      const targetPeerId = (p as any).peerId;
+      if (targetPeerId && !calledPeersRef.current.has(targetPeerId)) {
+        calledPeersRef.current.add(targetPeerId);
+        const call = peerRef.current.call(targetPeerId, localStreamRef.current);
+        if (call) {
+          call.on('stream', (remoteStream: MediaStream) => {
+            setRemoteStreams((prev) => ({ ...prev, [targetPeerId]: remoteStream }));
+          });
+        }
+      }
+    });
+  }, [players, isMicOn, localPlayerId]);
 
   return (
     <>
