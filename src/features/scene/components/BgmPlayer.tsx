@@ -5,7 +5,8 @@ import { useUIStore } from '@/features/game/stores/uiStore';
 
 export const BGM_PLAYLIST = [
   { name: 'Obh Combi Sachet', url: '/bgm.mp3' },
-  { name: 'Mejikuhibiniu', url: '/bgm1.mp3' }
+  { name: 'Mejikuhibiniu', url: '/bgm1.mp3' },
+  { name: 'Mejikuhibiniu', url: '/bgm2.mp3' }
 ];
 
 export function BgmPlayer() {
