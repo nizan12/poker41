@@ -10,10 +10,11 @@ import {
   addPlayer,
   getPlayer,
   getAvailableRooms,
+  getLeaderboard,
 } from '@/lib/firebase/firestore';
 import { generateRoomCode } from '@/lib/utils';
 import Link from 'next/link';
-import { Home, LogIn, Sparkles, Target } from 'lucide-react';
+import { Home, LogIn, Sparkles, Target, Trophy, X } from 'lucide-react';
 
 interface RoomData {
   id: string;
@@ -36,6 +37,9 @@ export default function LobbyPage() {
   const [rooms, setRooms] = useState<RoomData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
 
   // Load available rooms
   useEffect(() => {
@@ -149,11 +153,11 @@ export default function LobbyPage() {
       const existingPlayer = await getPlayer(joinId, currentUser.uid);
 
       if (!existingPlayer) {
-        if ((room as any).status !== 'waiting') {
-          setError('Permainan sudah dimulai, tidak bisa bergabung sekarang.');
-          setLoading(false);
-          return;
-        }
+        // Fetch current players to check room capacity
+        // Note: we can't easily get the count without fetching the collection,
+        // but we can assume if status != 'waiting', they are a spectator.
+        // Or we can just let them join and mark as spectator based on status.
+        const isSpectator = (room as any).status !== 'waiting';
 
         await addPlayer(joinId, currentUser.uid, {
           name: playerName.trim(),
@@ -162,6 +166,7 @@ export default function LobbyPage() {
           isReady: false,
           isConnected: true,
           seatIndex: -1, // Will be assigned by the room
+          isSpectator: isSpectator,
         });
       }
 
@@ -171,6 +176,19 @@ export default function LobbyPage() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenLeaderboard = async () => {
+    setIsLeaderboardOpen(true);
+    setLoadingLeaderboard(true);
+    try {
+      const data = await getLeaderboard();
+      setLeaderboard(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingLeaderboard(false);
     }
   };
 
@@ -186,11 +204,20 @@ export default function LobbyPage() {
             Remi 41
           </span>
         </Link>
-        {user && (
-          <div className="text-text-muted text-sm">
-            ID: <span className="text-text font-mono text-xs">{user.uid.slice(0, 8)}...</span>
-          </div>
-        )}
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={handleOpenLeaderboard}
+            className="flex items-center gap-2 text-gold hover:text-yellow-400 transition-colors font-medium text-sm"
+          >
+            <Trophy className="w-5 h-5" />
+            <span className="hidden sm:inline">Leaderboard</span>
+          </button>
+          {user && (
+            <div className="text-text-muted text-sm hidden sm:block">
+              ID: <span className="text-text font-mono text-xs">{user.uid.slice(0, 8)}...</span>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Main Content */}
@@ -381,6 +408,65 @@ export default function LobbyPage() {
           </AnimatePresence>
         </div>
       </div>
+      
+      {/* Leaderboard Modal */}
+      <AnimatePresence>
+        {isLeaderboardOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="glass-card w-full max-w-md max-h-[80vh] flex flex-col relative"
+            >
+              <button 
+                onClick={() => setIsLeaderboardOpen(false)}
+                className="absolute top-4 right-4 text-text-muted hover:text-text"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              
+              <div className="p-6 border-b border-border">
+                <h2 className="text-2xl font-heading font-bold text-gradient-gold flex items-center gap-2">
+                  <Trophy className="w-6 h-6" />
+                  Top 10 Pemain
+                </h2>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                {loadingLeaderboard ? (
+                  <div className="text-center text-text-muted py-8">Memuat data...</div>
+                ) : leaderboard.length === 0 ? (
+                  <div className="text-center text-text-muted py-8">Belum ada data peringkat.</div>
+                ) : (
+                  leaderboard.map((u, i) => (
+                    <div key={u.id} className="flex items-center justify-between p-3 bg-surface-dark rounded-xl border border-border">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i === 0 ? 'bg-yellow-500/20 text-yellow-500' : i === 1 ? 'bg-gray-300/20 text-gray-300' : i === 2 ? 'bg-orange-400/20 text-orange-400' : 'bg-surface-light text-text-muted'}`}>
+                          #{i + 1}
+                        </div>
+                        <div>
+                          <div className="font-medium text-text-bright">{u.name || 'Anonymous'}</div>
+                          <div className="text-xs text-text-muted">{u.totalGames} kali main</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-gold font-bold">{u.wins || 0} Menang</div>
+                        <div className="text-xs text-text-muted">Max: {u.highestScore || 0} pts</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }

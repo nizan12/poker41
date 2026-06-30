@@ -39,6 +39,7 @@ export interface Player {
   isConnected: boolean;
   joinedAt: number;       // Timestamp
   seatIndex: number;      // Position at table (0-5)
+  isSpectator?: boolean;  // True if they are just watching
 }
 
 // --- Room Types ---

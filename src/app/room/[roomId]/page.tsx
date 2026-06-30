@@ -18,6 +18,7 @@ import {
   sendChatMessage,
   onChatSnapshot,
   removePlayer,
+  updateUserStats,
 } from '@/lib/firebase/firestore';
 import {
   createDeck,
@@ -34,7 +35,9 @@ import {
 } from '@/types';
 import { PlayerHandUI } from '@/features/game/components/PlayerHandUI';
 import { VoiceChatManager } from '@/features/voice/components/VoiceChatManager';
-import { Crown, Target, Timer, VolumeX, Volume2, Gamepad2, Recycle, Trash2, Rocket, Trophy, MessageSquare, Library, Users, X, Mic, MicOff } from 'lucide-react';
+import { ConfettiEffect } from '@/features/scene/components/ConfettiEffect';
+import { BgmPlayer, BGM_PLAYLIST } from '@/features/scene/components/BgmPlayer';
+import { Crown, Target, Timer, VolumeX, Volume2, Gamepad2, Recycle, Trash2, Rocket, Trophy, MessageSquare, Library, Users, X, Mic, MicOff, Music, Smile } from 'lucide-react';
 // Dynamic import for 3D scene (no SSR)
 const GameScene = dynamic(
   () => import('@/features/scene/components/GameScene'),
@@ -53,14 +56,18 @@ export default function GameRoomPage() {
     setCanDeclareWin, setDrawActions,
     isDealingIntro, setIsDealingIntro, dealtCardsCount, setDealtCardsCount
   } = useGameStore();
-  const { isMuted, toggleMute, isMicOn, toggleMic } = useUIStore();
+  const { isMuted, toggleMute, isMicOn, toggleMic, isBgmOn, toggleBgm, bgmVolume, setBgmVolume, currentBgmIndex, setBgmIndex } = useUIStore();
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isPlayersOpen, setIsPlayersOpen] = useState(false);
+  const [isEmojiOpen, setIsEmojiOpen] = useState(false);
+  const [isBgmPopoverOpen, setIsBgmPopoverOpen] = useState(false);
+  const [activeReactions, setActiveReactions] = useState<{playerId: string, emoji: string, id: number}[]>([]);
   const [turnTimer, setTurnTimer] = useState(30);
   const [isProcessing, setIsProcessing] = useState(false);
+  const hasJoinedRef = useRef(false);
 
   // Set local player ID
   useEffect(() => {
@@ -82,6 +89,21 @@ export default function GameRoomPage() {
           if (data.winnerId && data.winnerId !== 'DRAW') {
              audioManager.play('win');
           }
+        }
+        
+        // Handle Emoji Reaction from lastAction
+        if (data.lastAction?.type === 'reaction' && data.lastAction?.timestamp > Date.now() - 5000) {
+           const reactionId = data.lastAction.timestamp;
+           setActiveReactions(prev => {
+             // Don't add duplicate if it's the exact same timestamp
+             if (prev.find(r => r.id === reactionId)) return prev;
+             return [...prev, { playerId: data.lastAction.playerId, emoji: data.lastAction.emoji, id: reactionId }];
+           });
+           
+           // Remove after 3 seconds
+           setTimeout(() => {
+             setActiveReactions(prev => prev.filter(r => r.id !== reactionId));
+           }, 3000);
         }
       } else {
         router.push('/lobby');
@@ -107,39 +129,46 @@ export default function GameRoomPage() {
   useEffect(() => {
     if (!user || !players.length) return;
     const me = players.find(p => p.id === user.uid);
-    if (me?.hand) {
-      const hand: Card[] = me.hand.map(cardId => {
-        const [suit, rank] = cardId.split('-');
-        const value = rank === 'Ace' ? 11 :
-          ['Jack', 'Queen', 'King'].includes(rank) ? 10 :
-          parseInt(rank);
-        return { id: cardId, suit: suit as Card['suit'], rank: rank as Card['rank'], value };
-      });
-      setLocalHand(hand);
+    if (me) {
+      hasJoinedRef.current = true;
+      if (me.hand) {
+        const hand: Card[] = me.hand.map(cardId => {
+          const [suit, rank] = cardId.split('-');
+          const value = rank === 'Ace' ? 11 :
+            ['Jack', 'Queen', 'King'].includes(rank) ? 10 :
+            parseInt(rank);
+          return { id: cardId, suit: suit as Card['suit'], rank: rank as Card['rank'], value };
+        });
+        setLocalHand(hand);
 
-      // Check actions
-      const myTurn = room?.currentTurn === user.uid && room?.status === 'playing';
-      setCanDraw(myTurn && hand.length === 4);
-      setCanDiscard(myTurn && hand.length === 5);
-      setCanDeclareWin(myTurn && isWinningHand(hand));
-    } else {
-      // If user is not found in players array (kicked or hasn't joined), redirect to lobby
+        // Check actions
+        const myTurn = room?.currentTurn === user.uid && room?.status === 'playing';
+        setCanDraw(myTurn && hand.length === 4);
+        setCanDiscard(myTurn && hand.length === 5);
+        setCanDeclareWin(myTurn && isWinningHand(hand));
+      }
+    } else if (hasJoinedRef.current) {
+      // If user was previously in the room but now isn't (kicked), redirect to lobby
       router.push('/lobby');
     }
   }, [players, user, room, setLocalHand, setCanDraw, setCanDiscard, setCanDeclareWin, router]);
 
   // Turn timer
+  const myTurnElapsedRef = useRef(0);
+  
   useEffect(() => {
-    if (phase !== 'playing' || !room?.turnStartedAt) return;
+    if (phase !== 'playing') return;
+
+    setTurnTimer(room?.turnTimeLimit || 30);
+    myTurnElapsedRef.current = 0;
 
     const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - room.turnStartedAt) / 1000);
-      const remaining = Math.max(0, (room.turnTimeLimit || 30) - elapsed);
-      setTurnTimer(remaining);
+      setTurnTimer(prev => Math.max(0, prev - 1));
+      myTurnElapsedRef.current += 1;
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [phase, room?.turnStartedAt, room?.turnTimeLimit]);
+  }, [phase, room?.currentTurn, room?.turnTimeLimit]);
 
   // Handle Animations from lastAction
   const startAnimation = useGameStore(s => s.startAnimation);
@@ -168,15 +197,16 @@ export default function GameRoomPage() {
         let currentDealtCount = 0;
         
         for (let r = 0; r < 4; r++) {
-          for (let pIdx = 0; pIdx < players.length; pIdx++) {
-            const p = players[pIdx];
+          const activePlayers = players.filter(p => !p.isSpectator);
+          for (let pIdx = 0; pIdx < activePlayers.length; pIdx++) {
+            const p = activePlayers[pIdx];
             const isMe = p.id === user?.uid;
             
             let playerPos: [number, number, number] = [0, -1, 5];
             let playerRot: [number, number, number] = [0, 0, 0];
             
             if (!isMe) {
-              const otherPlayers = players.filter(op => op.id !== user?.uid);
+              const otherPlayers = activePlayers.filter(op => op.id !== user?.uid);
               const count = otherPlayers.length;
               const opIdx = otherPlayers.findIndex(op => op.id === p.id);
               if (opIdx !== -1) {
@@ -234,7 +264,8 @@ export default function GameRoomPage() {
     let playerRot: [number, number, number] = [0, 0, 0];
     
     if (!isMe) {
-      const otherPlayers = players.filter(p => p.id !== user?.uid);
+      const activePlayers = players.filter(p => !p.isSpectator);
+      const otherPlayers = activePlayers.filter(p => p.id !== user?.uid);
       const count = otherPlayers.length;
       const pIdx = otherPlayers.findIndex(p => p.id === action.playerId);
       if (pIdx !== -1) {
@@ -302,14 +333,16 @@ export default function GameRoomPage() {
   // Game actions
   const handleStartGame = async () => {
     if (!room || !user || room.hostId !== user.uid) return;
-    if (players.length < 2) return;
+    
+    const activePlayers = players.filter(p => !p.isSpectator);
+    if (activePlayers.length < 2) return;
 
     // Shuffle deck and deal
     const deck = shuffleDeck(createDeck());
     const hands: Record<string, string[]> = {};
     let deckIndex = 0;
 
-    for (const player of players) {
+    for (const player of activePlayers) {
       hands[player.id] = [];
       for (let i = 0; i < 4; i++) {
         hands[player.id].push(deck[deckIndex].id);
@@ -324,12 +357,12 @@ export default function GameRoomPage() {
       status: 'playing',
       deckCards: remainingDeck,
       discardPile: [],
-      currentTurn: players[0].id,
+      currentTurn: activePlayers[0].id,
       turnStartedAt: Date.now(),
     });
 
     // Deal hands to each player
-    for (const player of players) {
+    for (const player of activePlayers) {
       await updatePlayer(roomId, player.id, {
         hand: hands[player.id],
         isReady: true,
@@ -387,8 +420,9 @@ export default function GameRoomPage() {
     }
   };
 
-  const handleDiscard = async () => {
-    if (!user || !room || room.currentTurn !== user.uid || !selectedCardId || localHand.length !== 5 || isProcessing) return;
+  const handleDiscard = async (overrideCardId?: string) => {
+    const cardToDiscard = overrideCardId || selectedCardId;
+    if (!user || !room || room.currentTurn !== user.uid || !cardToDiscard || localHand.length !== 5 || isProcessing) return;
     setIsProcessing(true);
 
     try {
@@ -396,8 +430,8 @@ export default function GameRoomPage() {
       if (!myPlayer) return;
 
       audioManager.play('discard');
-      const newHand = myPlayer.hand.filter((id: string) => id !== selectedCardId);
-      const newDiscard = [...(room.discardPile || []), selectedCardId];
+      const newHand = myPlayer.hand.filter((id: string) => id !== cardToDiscard);
+      const newDiscard = [...(room.discardPile || []), cardToDiscard];
 
       const newHandCards = newHand.map(id => {
         const [suit, rank] = id.split('-');
@@ -406,11 +440,7 @@ export default function GameRoomPage() {
 
       if (isWinningHand(newHandCards)) {
         // Automatic win!
-        await updateRoom(roomId, {
-          discardPile: newDiscard,
-          status: 'finished',
-          winnerId: user.uid,
-        });
+        await finalizeGame(user.uid, newDiscard);
         await updatePlayer(roomId, user.uid, { hand: newHand });
         selectCard(null);
         return;
@@ -418,25 +448,22 @@ export default function GameRoomPage() {
 
       // Check if deck is empty (Draw)
       if (room.deckCards && room.deckCards.length === 0) {
-        await updateRoom(roomId, {
-          discardPile: newDiscard,
-          status: 'finished',
-          winnerId: 'DRAW',
-        });
+        await finalizeGame('DRAW', newDiscard);
         await updatePlayer(roomId, user.uid, { hand: newHand });
         selectCard(null);
         return;
       }
 
-      // Move to next player
-      const currentIdx = players.findIndex(p => p.id === user.uid);
-      const nextIdx = (currentIdx + 1) % players.length;
+      // Move to next active player
+      const activePlayers = players.filter(p => !p.isSpectator);
+      const currentIdx = activePlayers.findIndex(p => p.id === user.uid);
+      const nextIdx = (currentIdx + 1) % activePlayers.length;
 
       await updateRoom(roomId, {
         discardPile: newDiscard,
-        currentTurn: players[nextIdx].id,
+        currentTurn: activePlayers[nextIdx].id,
         turnStartedAt: Date.now(),
-        lastAction: { type: 'discard', playerId: user.uid, cardId: selectedCardId, timestamp: Date.now() }
+        lastAction: { type: 'discard', playerId: user.uid, cardId: cardToDiscard, timestamp: Date.now() }
       });
       await updatePlayer(roomId, user.uid, { hand: newHand });
       selectCard(null);
@@ -445,14 +472,83 @@ export default function GameRoomPage() {
     }
   };
 
+  // Auto-play when timer runs out (Smart Bot)
+  useEffect(() => {
+    // Prevent instant auto-play chain reaction by verifying we actually spent time on our turn
+    const timeLimit = room?.turnTimeLimit || 30;
+    const hasReallyTimedOut = turnTimer === 0 && myTurnElapsedRef.current >= (timeLimit - 1);
+    
+    if (hasReallyTimedOut && room?.currentTurn === user?.uid && !isProcessing && phase === 'playing' && !isDealingIntro) {
+      if (localHand.length === 4) {
+        // Decide whether to draw from deck or discard pile
+        const currentBestSuit = calculateHandScore(localHand).bestSuit;
+        let tookDiscard = false;
+        
+        if (room && room.discardPile && room.discardPile.length > 0) {
+          const topDiscardId = room.discardPile[room.discardPile.length - 1];
+          const topDiscardSuit = topDiscardId.split('-')[0];
+          
+          // If the top discard card matches our best suit, take it!
+          if (topDiscardSuit.toLowerCase() === currentBestSuit.toLowerCase()) {
+            handleDrawDiscard();
+            tookDiscard = true;
+          }
+        }
+        
+        if (!tookDiscard) {
+          handleDrawDeck();
+        }
+      } else if (localHand.length === 5) {
+        // Discard the lowest value card that doesn't match our best suit
+        const bestSuit = calculateHandScore(localHand).bestSuit;
+        const offSuitCards = localHand.filter(c => c.suit.toLowerCase() !== bestSuit.toLowerCase());
+        
+        if (offSuitCards.length > 0) {
+          // Discard the lowest value card of a different suit
+          offSuitCards.sort((a, b) => a.value - b.value);
+          handleDiscard(offSuitCards[0].id);
+        } else {
+          // If all 5 cards somehow match the same suit, discard the lowest value
+          const sorted = [...localHand].sort((a, b) => a.value - b.value);
+          handleDiscard(sorted[0].id);
+        }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnTimer, room?.currentTurn, user?.uid, isProcessing, phase, localHand, isDealingIntro]);
+
   const handleDeclareWin = async () => {
     if (!user || !room || room.currentTurn !== user.uid) return;
     if (!isWinningHand(localHand)) return;
 
+    await finalizeGame(user.uid, room.discardPile || []);
+  };
+
+  const finalizeGame = async (winnerId: string, discardPile: string[]) => {
     await updateRoom(roomId, {
       status: 'finished',
-      winnerId: user.uid,
+      winnerId,
+      discardPile,
     });
+    
+    // Process stats for all players
+    // We do it asynchronously without blocking
+    Promise.all(players.map(async (p) => {
+      if (p.isSpectator) return;
+      
+      const pHand = (p.hand || []).map(id => {
+        const [suit, rank] = id.split('-');
+        return { id, suit: suit as any, rank: rank as any, value: (RANK_VALUES as any)[rank] };
+      });
+      const scoreInfo = calculateHandScore(pHand);
+      const isWin = winnerId === p.id;
+      
+      try {
+        await updateUserStats(p.id, isWin, scoreInfo.score, p.name);
+      } catch (err) {
+        console.error('Error updating stats for player', p.id, err);
+      }
+    })).catch(console.error);
   };
 
   const drawDeckRef = useRef(handleDrawDeck);
@@ -526,11 +622,12 @@ export default function GameRoomPage() {
 
       // If playing and it's their turn, pass turn
       if (phase === 'playing' && room.currentTurn === user.uid) {
-        const otherPlayers = players.filter(p => p.id !== user.uid);
+        const activePlayers = players.filter(p => !p.isSpectator);
+        const otherPlayers = activePlayers.filter(p => p.id !== user.uid);
         if (otherPlayers.length > 0) {
           // Simple pass to next available player
-          const currentIdx = players.findIndex(p => p.id === user.uid);
-          const nextIdx = currentIdx === players.length - 1 ? 0 : currentIdx;
+          const currentIdx = activePlayers.findIndex(p => p.id === user.uid);
+          const nextIdx = currentIdx === activePlayers.length - 1 ? 0 : currentIdx;
           const nextPlayer = otherPlayers[nextIdx] || otherPlayers[0];
           await updateRoom(roomId, {
             currentTurn: nextPlayer.id,
@@ -553,10 +650,11 @@ export default function GameRoomPage() {
     try {
       // If playing and it's their turn, pass turn
       if (phase === 'playing' && room.currentTurn === targetPlayerId) {
-        const otherPlayers = players.filter(p => p.id !== targetPlayerId);
+        const activePlayers = players.filter(p => !p.isSpectator);
+        const otherPlayers = activePlayers.filter(p => p.id !== targetPlayerId);
         if (otherPlayers.length > 0) {
-          const currentIdx = players.findIndex(p => p.id === targetPlayerId);
-          const nextIdx = currentIdx === players.length - 1 ? 0 : currentIdx;
+          const currentIdx = activePlayers.findIndex(p => p.id === targetPlayerId);
+          const nextIdx = currentIdx === activePlayers.length - 1 ? 0 : currentIdx;
           const nextPlayer = otherPlayers[nextIdx] || otherPlayers[0];
           await updateRoom(roomId, {
             currentTurn: nextPlayer.id,
@@ -571,10 +669,41 @@ export default function GameRoomPage() {
     }
   };
 
+  const sendReaction = async (emoji: string) => {
+    if (!user || !room) return;
+    setIsEmojiOpen(false);
+    await updateRoom(roomId, {
+      lastAction: { type: 'reaction', emoji, playerId: user.uid, timestamp: Date.now() }
+    });
+  };
+
+  const bgmClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleBgmClick = () => {
+    if (bgmClickTimeoutRef.current) {
+      // Double click
+      clearTimeout(bgmClickTimeoutRef.current);
+      bgmClickTimeoutRef.current = null;
+      setIsBgmPopoverOpen(!isBgmPopoverOpen);
+    } else {
+      // Single click
+      bgmClickTimeoutRef.current = setTimeout(() => {
+        toggleBgm();
+        bgmClickTimeoutRef.current = null;
+      }, 250); // 250ms wait for double click
+    }
+  };
+
   return (
     <div className="w-full h-screen relative overflow-hidden bg-background">
       {/* Voice Chat System */}
       <VoiceChatManager />
+      
+      {/* Background Music System */}
+      <BgmPlayer />
+      
+      {/* Confetti Effect on Win */}
+      <ConfettiEffect />
 
       {/* 3D Game Scene */}
       <GameScene />
@@ -586,21 +715,107 @@ export default function GameRoomPage() {
           <button
             onClick={handleLeaveRoom}
             disabled={isProcessing}
-            className="glass-card px-3 py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
+            className="glass-card w-8 h-8 p-0 justify-center md:w-auto md:h-auto md:px-3 md:py-2 text-text-muted hover:text-text text-sm flex items-center md:gap-2 transition-colors disabled:opacity-50 !rounded-full md:!rounded-xl"
           >
-            ← Keluar
+            <span className="md:hidden">←</span>
+            <span className="hidden md:inline">← Keluar</span>
           </button>
 
-          <div className="glass-card px-4 py-2 text-center">
-            <div className="text-text-bright font-heading font-bold text-sm">
-              {room?.name || 'Loading...'}
+          <div className="flex items-center gap-2 relative">
+            <div className="glass-card px-2 py-1 md:px-4 md:py-2 text-center max-w-[100px] sm:max-w-[150px] md:max-w-none mr-1 md:mr-2">
+              <div className="text-text-bright font-heading font-bold text-[10px] md:text-sm truncate">
+                {room?.name || 'Loading...'}
+              </div>
+              <div className="text-text-muted text-[9px] md:text-xs truncate">
+                ID: {roomId?.slice(0, 8)}
+              </div>
             </div>
-            <div className="text-text-muted text-xs">
-              Room: {roomId?.slice(0, 8)}...
-            </div>
-          </div>
+            <button
+              onClick={handleBgmClick}
+              className={`glass-card p-2 md:px-3 md:py-2 text-sm flex items-center gap-2 transition-colors ${isBgmOn ? 'text-primary' : 'text-text-muted hover:text-text'}`}
+              title="Klik 1x Play/Pause, Klik 2x Pengaturan"
+            >
+              <Music className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsEmojiOpen(!isEmojiOpen)}
+              className="glass-card p-2 text-text-muted hover:text-primary transition-colors"
+              title="Kirim Emoji"
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+            
+            
+            {/* BGM Popover */}
+            <AnimatePresence>
+              {isBgmPopoverOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute top-12 right-0 md:right-24 w-64 glass-card p-4 flex flex-col gap-4 z-50 rounded-2xl border border-border"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-text-bright">Background Music</span>
+                    <button 
+                      onClick={() => toggleBgm()}
+                      className={`px-3 py-1 text-xs rounded-full transition-colors ${isBgmOn ? 'bg-primary text-background' : 'bg-surface text-text-muted'}`}
+                    >
+                      {isBgmOn ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-text-muted">Volume</label>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="1" 
+                      step="0.05"
+                      value={bgmVolume}
+                      onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
+                      className="w-full accent-primary"
+                    />
+                  </div>
 
-          <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-text-muted">Track</label>
+                    <select 
+                      value={currentBgmIndex}
+                      onChange={(e) => setBgmIndex(parseInt(e.target.value))}
+                      className="bg-surface text-text text-sm p-2 rounded-lg border border-border outline-none focus:border-primary"
+                    >
+                      {BGM_PLAYLIST.map((track, i) => (
+                        <option key={i} value={i}>{track.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Emoji Popover */}
+            <AnimatePresence>
+              {isEmojiOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute top-12 right-0 md:right-12 glass-card p-2 flex flex-wrap justify-center w-[160px] md:w-auto md:flex-nowrap gap-2 z-50 rounded-2xl border border-border"
+                >
+                  {['👍', '😂', '😡', '👏', '😭', '🤯'].map(emoji => (
+                    <button 
+                      key={emoji}
+                      onClick={() => sendReaction(emoji)}
+                      className="text-2xl hover:scale-125 transition-transform"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <button
               onClick={toggleMic}
               className={`glass-card p-2 md:px-3 md:py-2 text-sm flex items-center gap-2 transition-colors ${isMicOn ? 'text-primary' : 'text-text-muted hover:text-text'}`}
@@ -617,11 +832,33 @@ export default function GameRoomPage() {
             </button>
             <button
               onClick={() => setIsChatOpen(!isChatOpen)}
-              className="glass-card px-3 py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors"
+              className="glass-card p-2 md:px-3 md:py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors"
             >
-              <MessageSquare className="w-4 h-4" /> Chat
+              <MessageSquare className="w-4 h-4" /> <span className="hidden md:inline">Chat</span>
             </button>
           </div>
+        </div>
+
+        {/* Global Mobile Emoji Reactions */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 pointer-events-none z-50 md:hidden flex flex-col items-center gap-2">
+          <AnimatePresence>
+            {activeReactions.map(r => {
+              const p = players.find(player => player.id === r.playerId);
+              return (
+                <motion.div
+                  key={r.id}
+                  initial={{ opacity: 0, y: 50, scale: 0.5 }}
+                  animate={{ opacity: 1, y: 0, scale: 1.5 }}
+                  exit={{ opacity: 0, y: -50, scale: 0.8 }}
+                  transition={{ duration: 0.8 }}
+                  className="text-4xl drop-shadow-2xl flex flex-col items-center"
+                >
+                  <span>{r.emoji}</span>
+                  {p && <span className="text-[10px] text-white bg-black/50 px-2 py-0.5 rounded-full mt-2 font-bold whitespace-nowrap">{p.name}</span>}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </div>
 
         {/* Players Info — Top left (Desktop & Mobile Modal) */}
@@ -635,7 +872,9 @@ export default function GameRoomPage() {
             >
               <div className={`w-1.5 h-1.5 rounded-full ${p.isConnected ? 'bg-success' : 'bg-danger'}`} />
               <span className={`font-medium flex items-center gap-1 ${p.id === user?.uid ? 'text-primary' : 'text-text'}`}>
-                {p.name} {p.id === room?.hostId && <Crown className="w-3 h-3 text-secondary" />}
+                {p.name} 
+                {p.isSpectator && <span className="text-text-muted text-[10px] uppercase font-normal ml-1">Spectator</span>}
+                {p.id === room?.hostId && <Crown className="w-3 h-3 text-secondary" />}
               </span>
               {isPlaying && (
                 <span className="text-text-muted text-xs ml-2">
@@ -651,17 +890,33 @@ export default function GameRoomPage() {
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
+              
+              {/* Floating Emoji Reactions */}
+              <AnimatePresence>
+                {activeReactions.filter(r => r.playerId === p.id).map(r => (
+                  <motion.div
+                    key={r.id}
+                    initial={{ opacity: 0, y: 10, scale: 0.5 }}
+                    animate={{ opacity: 1, y: -30, scale: 1.5 }}
+                    exit={{ opacity: 0, y: -50, scale: 0.8 }}
+                    transition={{ duration: 0.8 }}
+                    className="absolute right-0 top-0 text-3xl pointer-events-none drop-shadow-xl z-50"
+                  >
+                    {r.emoji}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           ))}
         </div>
 
         {/* Turn Indicator + Timer */}
         {isPlaying && !isDealingIntro && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 w-full max-w-[280px] md:max-w-max px-4 md:px-0">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 w-max max-w-[90vw]">
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`glass-card px-4 py-2 flex flex-row items-center justify-between md:justify-center md:gap-6 ${
+              className={`glass-card px-4 py-2 flex flex-row items-center justify-center gap-4 md:gap-6 ${
                 myTurn ? 'border-primary animate-pulse-glow' : ''
               }`}
             >
@@ -682,7 +937,7 @@ export default function GameRoomPage() {
         )}
 
         {/* 2D Player Hand UI */}
-        <PlayerHandUI />
+        <PlayerHandUI onDiscard={handleDiscard} />
 
         {/* Player Hand Score & Audio */}
         {isPlaying && localHand.length > 0 && !isDealingIntro && (
@@ -733,7 +988,7 @@ export default function GameRoomPage() {
             )}
             {localHand.length === 5 && selectedCardId && (
               <button
-                onClick={handleDiscard}
+                onClick={() => handleDiscard()}
                 disabled={isProcessing}
                 className="btn-gold px-3 md:px-4 py-2.5 md:py-3 text-xs md:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
               >
@@ -755,7 +1010,7 @@ export default function GameRoomPage() {
                 Menunggu Pemain
               </h2>
               <p className="text-text-muted mb-6">
-                {players.length} / {room?.maxPlayers || 4} pemain
+                {players.filter(p => !p.isSpectator).length} / {room?.maxPlayers || 4} pemain
               </p>
 
               <div className="space-y-3 mb-6">
@@ -767,7 +1022,7 @@ export default function GameRoomPage() {
                     <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
                       {p.name.charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-text font-medium">{p.name}</span>
+                    <span className="text-text font-medium">{p.name} {p.isSpectator && <span className="text-text-muted text-xs font-normal">(Penonton)</span>}</span>
                     {p.id === room?.hostId && (
                       <span className="ml-auto text-secondary text-xs flex items-center gap-1">Host <Crown className="w-3 h-3" /></span>
                     )}
@@ -783,7 +1038,7 @@ export default function GameRoomPage() {
                 </div>
               </div>
 
-              {isHost && players.length >= 2 && (
+              {isHost && players.filter(p => !p.isSpectator).length >= 2 && (
                 <button
                   onClick={handleStartGame}
                   className="w-full btn-gold py-4 rounded-xl text-lg font-bold"
@@ -791,9 +1046,9 @@ export default function GameRoomPage() {
                   <span className="flex items-center justify-center gap-2"><Rocket className="w-6 h-6" /> Mulai Permainan!</span>
                 </button>
               )}
-              {isHost && players.length < 2 && (
+              {isHost && players.filter(p => !p.isSpectator).length < 2 && (
                 <p className="text-text-muted text-sm">
-                  Butuh minimal 2 pemain untuk memulai
+                  Butuh minimal 2 pemain aktif untuk memulai
                 </p>
               )}
               {!isHost && (
@@ -852,14 +1107,14 @@ export default function GameRoomPage() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => router.push('/lobby')}
-                    className="flex-1 btn-secondary py-3 rounded-xl"
+                    className="flex-1 btn-secondary !py-2 !px-3 text-sm rounded-xl"
                   >
                     Kembali ke Lobby
                   </button>
                   {isHost && (
                     <button
                       onClick={handleStartGame}
-                      className="flex-1 btn-gold py-3 rounded-xl"
+                      className="flex-1 btn-gold !py-2 !px-3 text-sm rounded-xl"
                     >
                       Main Lagi
                     </button>

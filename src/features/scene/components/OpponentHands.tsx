@@ -22,7 +22,7 @@ export function OpponentHands() {
   const isDealingIntro = useGameStore((s) => s.isDealingIntro);
   const dealtCardsCount = useGameStore((s) => s.dealtCardsCount);
   
-  const otherPlayers = useMemo(() => players.filter(p => p.id !== localPlayerId), [players, localPlayerId]);
+  const otherPlayers = useMemo(() => players.filter(p => p.id !== localPlayerId && !p.isSpectator), [players, localPlayerId]);
 
   // Position opponents around the table
   const opponentPositions = useMemo(() => {
@@ -35,8 +35,8 @@ export function OpponentHands() {
 
     const localPlayer = players.find(p => p.id === localPlayerId);
     
-    // Add local player at the bottom of the table
-    if (localPlayer) {
+    // Add local player at the bottom of the table (if they are not a spectator)
+    if (localPlayer && !localPlayer.isSpectator) {
       positions.push({
         player: localPlayer,
         pos: [0, 0.02, 4.2],
@@ -67,6 +67,15 @@ export function OpponentHands() {
     return positions;
   }, [otherPlayers, players, localPlayerId]);
 
+  const localPlayer = players.find(p => p.id === localPlayerId);
+  const isSpectator = localPlayer?.isSpectator;
+
+  const getCardPath = (cardId: string) => {
+    const [suit, rank] = cardId.split('-');
+    const suitCap = suit.charAt(0).toUpperCase() + suit.slice(1);
+    return encodeURI(`/kartu/Suit=${suitCap}, Number=${rank}.svg`);
+  };
+
   return (
     <>
       {opponentPositions.map(({ player, pos, rot }) => {
@@ -78,13 +87,17 @@ export function OpponentHands() {
 
         return (
           <group key={player.id} position={pos} rotation={rot}>
-            {/* Face-down cards */}
+            {/* Face-down cards (or Face-up for spectator) */}
             {Array.from({ length: cardCount }).map((_, cardIdx) => {
               const cardSpacing = 0.2;
               const startX = -0.3;
               const x = startX + cardIdx * cardSpacing;
               // Fan angle based on position relative to center
               const angle = -x * 0.15;
+
+              const cardId = player.hand?.[cardIdx];
+              const isFaceUp = isSpectator && cardId;
+              const texturePath = isFaceUp ? getCardPath(cardId) : CARD_BACK_PATH;
 
               return (
                 <group
@@ -96,14 +109,14 @@ export function OpponentHands() {
                     <meshStandardMaterial color="#f0f0f0" roughness={0.4} metalness={0.05} />
                   </mesh>
 
-                  {/* Card back image */}
+                  {/* Card face/back image */}
                   <mesh
                     position={[0, CARD_DEPTH / 2 + 0.0025, 0]}
                     rotation={[-Math.PI / 2, 0, 0]}
                   >
                     <planeGeometry args={[CARD_WIDTH, CARD_HEIGHT]} />
                     <Suspense fallback={<meshStandardMaterial color="#ffffff" roughness={0.3} />}>
-                      <CardFaceTexture imagePath={CARD_BACK_PATH} />
+                      <CardFaceTexture imagePath={texturePath} />
                     </Suspense>
                   </mesh>
                 </group>

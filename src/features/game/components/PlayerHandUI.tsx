@@ -8,7 +8,11 @@ import { useGameStore } from '@/features/game/stores/gameStore';
  * 2D card hand UI overlay — renders at the bottom of the screen
  * Uses actual SVG card images from /kartu/ folder
  */
-export function PlayerHandUI() {
+interface PlayerHandUIProps {
+  onDiscard?: (cardId: string) => void;
+}
+
+export function PlayerHandUI({ onDiscard }: PlayerHandUIProps) {
   const localHand = useGameStore((s) => s.localHand);
   const isDealingIntro = useGameStore((s) => s.isDealingIntro);
   const dealtCardsCount = useGameStore((s) => s.dealtCardsCount);
@@ -64,6 +68,15 @@ export function PlayerHandUI() {
                 }}
                 exit={{ y: 100, opacity: 0, scale: 0.5 }}
                 transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                drag={isInteractive && localHand.length === 5 ? "y" : false}
+                dragConstraints={{ top: 0, bottom: 0 }}
+                dragElastic={0.2}
+                onDragEnd={(e, info) => {
+                  if (info.offset.y < -50 && onDiscard) {
+                    selectCard(card.id);
+                    onDiscard(card.id);
+                  }
+                }}
                 style={{
                   zIndex: isSelected ? 20 : isHovered ? 15 : 10 - Math.abs(offset),
                   marginLeft: i === 0 ? 0 : -20,

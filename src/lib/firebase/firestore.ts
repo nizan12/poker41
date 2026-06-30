@@ -168,4 +168,33 @@ export async function getAvailableRooms() {
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// --- Leaderboard Operations ---
+export const usersRef = collection(db, 'users');
+
+export async function updateUserStats(userId: string, isWin: boolean, score: number, name: string) {
+  const userDoc = await getDoc(doc(db, 'users', userId));
+  if (!userDoc.exists()) {
+    await setDoc(doc(db, 'users', userId), {
+      name,
+      totalGames: 1,
+      wins: isWin ? 1 : 0,
+      highestScore: score,
+    });
+  } else {
+    const data = userDoc.data();
+    await updateDoc(doc(db, 'users', userId), {
+      name, // update name if changed
+      totalGames: (data.totalGames || 0) + 1,
+      wins: (data.wins || 0) + (isWin ? 1 : 0),
+      highestScore: Math.max(data.highestScore || 0, score)
+    });
+  }
+}
+
+export async function getLeaderboard() {
+  const q = query(usersRef, orderBy('wins', 'desc'), orderBy('highestScore', 'desc'), limit(10));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 export { serverTimestamp, Timestamp };

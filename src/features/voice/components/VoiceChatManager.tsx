@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '@/features/game/stores/gameStore';
 import { useUIStore } from '@/features/game/stores/uiStore';
+import { updatePlayer } from '@/lib/firebase/firestore';
 
 // We dynamically import peerjs to avoid SSR issues
 export function VoiceChatManager() {
@@ -21,15 +22,19 @@ export function VoiceChatManager() {
     const initPeer = async () => {
       try {
         const { default: Peer } = await import('peerjs');
-        // Predictable ID: poker41-{roomId}-{playerId}
-        const myPeerId = `poker41-${room.id}-${localPlayerId}`;
-        
-        const peer = new Peer(myPeerId, {
+        // Let PeerJS generate a random ID to avoid "ID is taken" errors
+        const peer = new Peer({
           debug: 2,
         });
 
-        peer.on('open', (id) => {
+        peer.on('open', async (id) => {
           console.log('[VoiceChat] My Peer ID is:', id);
+          // Save this peer ID to Firestore so others can call us
+          try {
+            await updatePlayer(room.id, localPlayerId, { peerId: id });
+          } catch (e) {
+            console.error('Failed to update peerId', e);
+          }
         });
 
         peer.on('call', (call) => {
@@ -75,12 +80,14 @@ export function VoiceChatManager() {
         if (peerRef.current && room?.id) {
           const otherPlayers = players.filter(p => p.id !== localPlayerId);
           otherPlayers.forEach(p => {
-            const targetPeerId = `poker41-${room.id}-${p.id}`;
-            const call = peerRef.current.call(targetPeerId, stream);
-            if (call) {
-              call.on('stream', (remoteStream: MediaStream) => {
-                setRemoteStreams((prev) => ({ ...prev, [targetPeerId]: remoteStream }));
-              });
+            const targetPeerId = (p as any).peerId;
+            if (targetPeerId) {
+              const call = peerRef.current.call(targetPeerId, stream);
+              if (call) {
+                call.on('stream', (remoteStream: MediaStream) => {
+                  setRemoteStreams((prev) => ({ ...prev, [targetPeerId]: remoteStream }));
+                });
+              }
             }
           });
         }
