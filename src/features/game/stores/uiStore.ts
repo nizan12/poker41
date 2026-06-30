@@ -16,7 +16,8 @@ interface UIState {
   isMicOn: boolean;
   isBgmOn: boolean;
   bgmVolume: number;
-  currentBgmIndex: number;
+  currentVideoId: string | null;
+  currentMusicThumbnail: string | null;
 
   // Toast
   toasts: Array<{ id: string; message: string; type: 'info' | 'success' | 'error' | 'warning' }>;
@@ -37,7 +38,8 @@ interface UIState {
   toggleMic: () => void;
   toggleBgm: () => void;
   setBgmVolume: (volume: number) => void;
-  setBgmIndex: (index: number) => void;
+  setCurrentVideoId: (id: string | null) => void;
+  setCurrentMusicThumbnail: (thumbnail: string | null) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -52,7 +54,8 @@ export const useUIStore = create<UIState>((set) => ({
   isMicOn: false,
   isBgmOn: false,
   bgmVolume: 0.3,
-  currentBgmIndex: 0,
+  currentVideoId: null,
+  currentMusicThumbnail: null,
 
   toggleChat: () => set((s) => ({ isChatOpen: !s.isChatOpen })),
   openSettings: () => set({ isSettingsOpen: true }),
@@ -82,5 +85,6 @@ export const useUIStore = create<UIState>((set) => ({
   toggleMic: () => set((s) => ({ isMicOn: !s.isMicOn })),
   toggleBgm: () => set((s) => ({ isBgmOn: !s.isBgmOn })),
   setBgmVolume: (volume) => set({ bgmVolume: volume }),
-  setBgmIndex: (index) => set({ currentBgmIndex: index }),
+  setCurrentVideoId: (id) => set({ currentVideoId: id }),
+  setCurrentMusicThumbnail: (thumbnail) => set({ currentMusicThumbnail: thumbnail }),
 }));

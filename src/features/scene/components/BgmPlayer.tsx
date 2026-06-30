@@ -1,86 +1,70 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import YouTube, { YouTubeEvent } from 'react-youtube';
 import { useUIStore } from '@/features/game/stores/uiStore';
 
-export const BGM_PLAYLIST = [
-  { name: 'Obh Combi Sachet', url: '/bgm.mp3' },
-  { name: 'Mejikuhibiniu', url: '/bgm1.mp3' },
-  { name: 'Hip Dut', url: '/bgm2.mp3' }
-];
-
 export function BgmPlayer() {
-  const { isBgmOn, bgmVolume, currentBgmIndex } = useUIStore();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const trackIndexRef = useRef<number>(currentBgmIndex);
+  const { isBgmOn, bgmVolume, currentVideoId } = useUIStore();
+  const playerRef = useRef<any>(null);
+
+  const onReady = (event: YouTubeEvent) => {
+    playerRef.current = event.target;
+    event.target.setVolume(Math.round(bgmVolume * 100));
+    if (isBgmOn && currentVideoId) {
+      event.target.playVideo();
+    }
+  };
+
+  const onEnd = (event: YouTubeEvent) => {
+    // Optionally fetch /api/upnext here to play the next song automatically
+    // For now, it will just stop.
+  };
+
+  const onError = (event: YouTubeEvent) => {
+    console.error('YouTube Player Error:', event.data);
+  };
 
   useEffect(() => {
-    let errorCount = 0;
-
-    if (!audioRef.current && BGM_PLAYLIST.length > 0) {
-      audioRef.current = new Audio(BGM_PLAYLIST[currentBgmIndex].url);
-      audioRef.current.volume = bgmVolume; // Dynamic volume
-
-      // Listen for the track ending to play the next one
-      audioRef.current.onended = () => {
-        errorCount = 0; // reset error count on successful play
-        trackIndexRef.current = (trackIndexRef.current + 1) % BGM_PLAYLIST.length;
-        useUIStore.getState().setBgmIndex(trackIndexRef.current);
-        if (audioRef.current) {
-          audioRef.current.src = BGM_PLAYLIST[trackIndexRef.current].url;
-          audioRef.current.play().catch(() => { });
-        }
-      };
-
-      // If a track fails to load (e.g. 404), try the next one
-      audioRef.current.onerror = () => {
-        errorCount++;
-        // Prevent infinite loop if all files are missing
-        if (errorCount < BGM_PLAYLIST.length) {
-          trackIndexRef.current = (trackIndexRef.current + 1) % BGM_PLAYLIST.length;
-          useUIStore.getState().setBgmIndex(trackIndexRef.current);
-          if (audioRef.current) {
-            audioRef.current.src = BGM_PLAYLIST[trackIndexRef.current].url;
-            if (isBgmOn) audioRef.current?.play().catch(() => { });
-          }
-        }
-      };
+    if (playerRef.current) {
+      if (isBgmOn && currentVideoId) {
+        playerRef.current.playVideo();
+      } else {
+        playerRef.current.pauseVideo();
+      }
     }
-
-    if (isBgmOn) {
-      audioRef.current?.play().catch(e => {
-        // Ignore autoplay or missing file errors to prevent console spam
-      });
-    } else {
-      audioRef.current?.pause();
-    }
-  }, [isBgmOn]);
+  }, [isBgmOn, currentVideoId]);
 
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = bgmVolume;
+    if (playerRef.current) {
+      playerRef.current.setVolume(Math.round(bgmVolume * 100));
     }
   }, [bgmVolume]);
 
-  useEffect(() => {
-    if (audioRef.current && trackIndexRef.current !== currentBgmIndex) {
-      trackIndexRef.current = currentBgmIndex;
-      audioRef.current.src = BGM_PLAYLIST[currentBgmIndex].url;
-      if (isBgmOn) {
-        audioRef.current.play().catch(() => { });
-      }
-    }
-  }, [currentBgmIndex, isBgmOn]);
+  if (!currentVideoId) return null;
 
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-        audioRef.current = null;
-      }
-    }
-  }, []);
-
-  return null;
+  return (
+    <div className="hidden">
+      <YouTube
+        videoId={currentVideoId}
+        opts={{
+          height: '0',
+          width: '0',
+          playerVars: {
+            autoplay: isBgmOn ? 1 : 0,
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            modestbranding: 1,
+            rel: 0,
+            showinfo: 0,
+            iv_load_policy: 3,
+          },
+        }}
+        onReady={onReady}
+        onEnd={onEnd}
+        onError={onError}
+      />
+    </div>
+  );
 }

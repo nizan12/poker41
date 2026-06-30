@@ -37,8 +37,8 @@ import {
 import { PlayerHandUI } from '@/features/game/components/PlayerHandUI';
 import { VoiceChatManager } from '@/features/voice/components/VoiceChatManager';
 import { ConfettiEffect } from '@/features/scene/components/ConfettiEffect';
-import { BgmPlayer, BGM_PLAYLIST } from '@/features/scene/components/BgmPlayer';
-import { Crown, Target, Timer, VolumeX, Volume2, Gamepad2, Recycle, Trash2, Rocket, Trophy, MessageSquare, Library, Users, X, Mic, MicOff, Music, Smile } from 'lucide-react';
+import { BgmPlayer } from '@/features/scene/components/BgmPlayer';
+import { Crown, Target, Timer, VolumeX, Volume2, Gamepad2, Recycle, Trash2, Rocket, Trophy, MessageSquare, Library, Users, X, Mic, MicOff, Music, Smile, Search, Play, Pause, Loader } from 'lucide-react';
 // Dynamic import for 3D scene (no SSR)
 const GameScene = dynamic(
   () => import('@/features/scene/components/GameScene'),
@@ -58,19 +58,26 @@ export default function GameRoomPage() {
     isDealingIntro, setIsDealingIntro, dealtCardsCount, setDealtCardsCount,
     startAnimation, isGraveDiggerActive, setIsGraveDiggerActive
   } = useGameStore();
-  const { isMuted, toggleMute, isMicOn, toggleMic, isBgmOn, toggleBgm, bgmVolume, setBgmVolume, currentBgmIndex, setBgmIndex } = useUIStore();
+  const { isMuted, toggleMute, isMicOn, toggleMic, isBgmOn, toggleBgm, bgmVolume, setBgmVolume, setCurrentVideoId, currentVideoId, currentMusicThumbnail, setCurrentMusicThumbnail } = useUIStore();
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [selectedSpell, setSelectedSpell] = useState<SpellType | ''>('');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [lastReadMessageCount, setLastReadMessageCount] = useState(0);
   const [isPlayersOpen, setIsPlayersOpen] = useState(false);
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const [isWindstormTargeting, setIsWindstormTargeting] = useState(false);
   const [isBgmPopoverOpen, setIsBgmPopoverOpen] = useState(false);
   const [activeReactions, setActiveReactions] = useState<{playerId: string, emoji: string, id: number}[]>([]);
+  const [activeChatBubbles, setActiveChatBubbles] = useState<{playerId: string, message: string, id: number}[]>([]);
   const [turnTimer, setTurnTimer] = useState(30);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
   const hasJoinedRef = useRef(false);
 
   // Set local player ID
@@ -128,6 +135,35 @@ export default function GameRoomPage() {
       unsubChat();
     };
   }, [roomId, setRoom, setPlayers, setPhase, router]);
+
+  // Handle Chat Bubbles
+  useEffect(() => {
+    chatMessages.forEach(msg => {
+      // If message is newer than 5 seconds
+      if (Date.now() - msg.timestamp < 5000) {
+        setActiveChatBubbles(prev => {
+          // Already showing this exact message
+          if (prev.find(b => b.id === msg.timestamp)) return prev;
+          
+          // Auto remove after 5 seconds
+          setTimeout(() => {
+            setActiveChatBubbles(p => p.filter(b => b.id !== msg.timestamp));
+          }, 5000);
+          
+          // Remove old bubbles from the same player and add the new one
+          return [...prev.filter(b => b.playerId !== msg.playerId), { playerId: msg.playerId, message: msg.message, id: msg.timestamp }];
+        });
+      }
+    });
+  }, [chatMessages]);
+
+  useEffect(() => {
+    if (isChatOpen) {
+      setLastReadMessageCount(chatMessages.length);
+    }
+  }, [isChatOpen, chatMessages.length]);
+
+  const unreadCount = isChatOpen ? 0 : Math.max(0, chatMessages.length - lastReadMessageCount);
 
   // Update local hand from players data
   useEffect(() => {
@@ -875,6 +911,21 @@ export default function GameRoomPage() {
     });
   };
 
+  const handleSearchMusic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    try {
+      const res = await fetch(`https://yt4pix.vercel.app/api/search?q=${encodeURIComponent(searchQuery)}`);
+      const data = await res.json();
+      setSearchResults(data);
+    } catch (err) {
+      console.error('Failed to search music', err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const bgmClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleBgmClick = () => {
@@ -928,6 +979,17 @@ export default function GameRoomPage() {
                 ID: {roomId?.slice(0, 8)}
               </div>
             </div>
+            
+            {currentMusicThumbnail && currentVideoId && (
+              <div 
+                className={`w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden border-2 ${isBgmOn ? 'border-primary animate-[spin_4s_linear_infinite]' : 'border-border'} flex-shrink-0 transition-colors cursor-pointer shadow-lg`}
+                onClick={handleBgmClick}
+                title="Cover Musik"
+              >
+                <img src={currentMusicThumbnail} className="w-full h-full object-cover" alt="Cover" />
+              </div>
+            )}
+            
             <button
               onClick={handleBgmClick}
               className={`glass-card p-2 md:px-3 md:py-2 text-sm flex items-center gap-2 transition-colors ${isBgmOn ? 'text-primary' : 'text-text-muted hover:text-text'}`}
@@ -951,7 +1013,7 @@ export default function GameRoomPage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="absolute top-12 right-0 md:right-24 w-64 glass-card p-4 flex flex-col gap-4 z-50 rounded-2xl border border-border"
+                  className="absolute top-12 right-0 md:right-24 w-80 glass-card p-4 flex flex-col gap-4 z-50 rounded-2xl border border-border"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-bold text-text-bright">Background Music</span>
@@ -977,17 +1039,55 @@ export default function GameRoomPage() {
                   </div>
 
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-text-muted">Track</label>
-                    <select 
-                      value={currentBgmIndex}
-                      onChange={(e) => setBgmIndex(parseInt(e.target.value))}
-                      className="bg-surface text-text text-sm p-2 rounded-lg border border-border outline-none focus:border-primary"
-                    >
-                      {BGM_PLAYLIST.map((track, i) => (
-                        <option key={i} value={i}>{track.name}</option>
-                      ))}
-                    </select>
+                    <label className="text-xs text-text-muted">Cari Musik</label>
+                    <form onSubmit={handleSearchMusic} className="flex gap-2">
+                      <input 
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Judul / Artis..."
+                        className="bg-surface text-text text-sm p-2 rounded-lg border border-border outline-none focus:border-primary flex-1 min-w-0"
+                      />
+                      <button 
+                        type="submit" 
+                        disabled={isSearching}
+                        className="bg-primary text-background p-2 rounded-lg flex items-center justify-center disabled:opacity-50"
+                      >
+                        {isSearching ? <Loader className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      </button>
+                    </form>
                   </div>
+
+                  {searchResults.length > 0 && (
+                    <div className="flex flex-col gap-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
+                      {searchResults.map((track) => (
+                        <div 
+                          key={track.videoId} 
+                          onClick={() => {
+                            setCurrentVideoId(track.videoId);
+                            setCurrentMusicThumbnail(track.thumbnail);
+                            if (!isBgmOn) toggleBgm();
+                          }}
+                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-surface cursor-pointer group transition-colors"
+                        >
+                          <div className="relative w-10 h-10 rounded-md overflow-hidden flex-shrink-0">
+                            <img src={track.thumbnail} alt={track.title} className="w-full h-full object-cover" />
+                            <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity ${(currentVideoId === track.videoId && isBgmOn) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                              {(currentVideoId === track.videoId && isBgmOn) ? (
+                                <Pause className="w-4 h-4 text-white" fill="white" />
+                              ) : (
+                                <Play className="w-4 h-4 text-white" fill="white" />
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col overflow-hidden">
+                            <span className="text-xs font-bold text-text-bright truncate">{track.title}</span>
+                            <span className="text-[10px] text-text-muted truncate">{track.artists} • {track.duration}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1030,9 +1130,14 @@ export default function GameRoomPage() {
             </button>
             <button
               onClick={() => setIsChatOpen(!isChatOpen)}
-              className="glass-card p-2 md:px-3 md:py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors"
+              className="glass-card p-2 md:px-3 md:py-2 text-text-muted hover:text-text text-sm flex items-center gap-2 transition-colors relative"
             >
               <MessageSquare className="w-4 h-4" /> <span className="hidden md:inline">Chat</span>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -1094,7 +1199,7 @@ export default function GameRoomPage() {
               <AnimatePresence>
                 {activeReactions.filter(r => r.playerId === p.id).map(r => (
                   <motion.div
-                    key={r.id}
+                    key={`reaction-${r.id}`}
                     initial={{ opacity: 0, y: 10, scale: 0.5 }}
                     animate={{ opacity: 1, y: -30, scale: 1.5 }}
                     exit={{ opacity: 0, y: -50, scale: 0.8 }}
@@ -1102,6 +1207,22 @@ export default function GameRoomPage() {
                     className="absolute right-0 top-0 text-3xl pointer-events-none drop-shadow-xl z-50"
                   >
                     {r.emoji}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
+              {/* Chat Bubble */}
+              <AnimatePresence>
+                {activeChatBubbles.filter(b => b.playerId === p.id).map(b => (
+                  <motion.div
+                    key={`chat-${b.id}`}
+                    initial={{ opacity: 0, scale: 0.5, x: 20 }}
+                    animate={{ opacity: 1, scale: 1, x: 10 }}
+                    exit={{ opacity: 0, scale: 0.5, y: -10 }}
+                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                    className="absolute left-full top-0 ml-2 bg-surface border border-border px-3 py-1.5 rounded-2xl rounded-tl-sm shadow-xl z-50 min-w-max max-w-[200px]"
+                  >
+                    <p className="text-sm text-text-bright break-words line-clamp-2">{b.message}</p>
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -1486,7 +1607,7 @@ export default function GameRoomPage() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute top-0 right-0 bottom-0 w-full sm:w-80 z-50 glass-card border-l border-border flex flex-col bg-background/80 backdrop-blur-xl"
+              className="absolute top-0 right-0 bottom-0 w-full sm:w-80 z-[70] glass-card border-l border-border flex flex-col bg-background/80 backdrop-blur-xl"
             >
               <div className="flex items-center justify-between p-4 border-b border-border">
                 <h3 className="font-heading font-bold text-text-bright">Chat</h3>
