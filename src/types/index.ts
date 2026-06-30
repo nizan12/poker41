@@ -40,14 +40,20 @@ export interface Player {
   joinedAt: number;       // Timestamp
   seatIndex: number;      // Position at table (0-5)
   isSpectator?: boolean;  // True if they are just watching
+  spellType?: SpellType;  // Spell assigned to player
+  hasUsedSpell?: boolean;
+  isShielded?: boolean;
 }
+
+export type SpellType = 'card_flip' | 'grave_digger' | 'mulligan' | 'shield' | 'windstorm';
 
 // --- Room Types ---
 
-export type RoomStatus = 'waiting' | 'playing' | 'finished';
+export type RoomStatus = 'waiting' | 'selecting_spell' | 'playing' | 'finished';
 
 export interface Room {
   id: string;
+  code: string;
   name: string;
   status: RoomStatus;
   hostId: string;
@@ -56,6 +62,7 @@ export interface Room {
   currentTurn: string;          // Player ID whose turn it is
   turnStartedAt: number;
   turnTimeLimit: number;        // seconds (default 30)
+  turnDirection: 1 | -1;        // 1 for clockwise, -1 for counter-clockwise
   deckCards: string[];           // Card IDs in deck (hidden)
   discardPile: string[];         // Card IDs in discard (visible)
   winnerId: string | null;
@@ -85,7 +92,7 @@ export interface GameState {
 
 // --- Move Types ---
 
-export type MoveAction = 'draw_deck' | 'draw_discard' | 'discard' | 'declare_win';
+export type MoveAction = 'draw_deck' | 'draw_discard' | 'discard' | 'declare_win' | 'use_spell';
 
 export interface Move {
   id: string;

@@ -24,6 +24,9 @@ export interface GameStore {
   isDealingIntro: boolean;
   dealtCardsCount: number;
 
+  // Spells State
+  isGraveDiggerActive: boolean;
+
   // Animations
   animatingCards: Array<{
     id: string; // unique animation id
@@ -48,6 +51,7 @@ export interface GameStore {
   setCanDiscard: (can: boolean) => void;
   setCanDeclareWin: (can: boolean) => void;
   setLocalHand: (hand: Card[]) => void;
+  setIsGraveDiggerActive: (active: boolean) => void;
   setIsDealingIntro: (isDealing: boolean) => void;
   setDealtCardsCount: (count: number) => void;
   startAnimation: (animation: Omit<GameStore['animatingCards'][0], 'id' | 'startTime'>) => void;
@@ -78,6 +82,9 @@ const initialState = {
   localHand: [],
   isDealingIntro: false,
   dealtCardsCount: 0,
+  
+  isGraveDiggerActive: false,
+
   animatingCards: [],
   drawFromDeck: undefined,
   drawFromDiscard: undefined,
@@ -96,6 +103,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setCanDiscard: (can) => set({ canDiscard: can }),
   setCanDeclareWin: (can) => set({ canDeclareWin: can }),
   setLocalHand: (hand) => set({ localHand: hand }),
+  setIsGraveDiggerActive: (active) => set({ isGraveDiggerActive: active }),
   setIsDealingIntro: (isDealing) => set({ isDealingIntro: isDealing }),
   setDealtCardsCount: (count) => set({ dealtCardsCount: count }),
 

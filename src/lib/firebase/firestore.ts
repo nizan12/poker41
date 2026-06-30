@@ -60,6 +60,7 @@ export async function createRoom(roomData: DocumentData) {
 
   await setDoc(roomDoc, {
     ...roomData,
+    turnDirection: 1, // 1 for clockwise, -1 for counter-clockwise
     createdAt: serverTimestamp(),
   });
   return roomId;
@@ -88,8 +89,14 @@ export async function getPlayer(roomId: string, playerId: string) {
 }
 
 export async function addPlayer(roomId: string, playerId: string, playerData: DocumentData) {
+  const spells = ['card_flip', 'grave_digger', 'mulligan', 'shield', 'windstorm'];
+  const randomSpell = spells[Math.floor(Math.random() * spells.length)];
+
   await setDoc(doc(db, 'rooms', roomId, 'players', playerId), {
     ...playerData,
+    spellType: null,
+    hasUsedSpell: false,
+    isShielded: false,
     joinedAt: serverTimestamp(),
   });
 }

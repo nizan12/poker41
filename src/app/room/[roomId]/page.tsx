@@ -32,6 +32,7 @@ import {
   type Player,
   type Room,
   type ChatMessage,
+  type SpellType,
 } from '@/types';
 import { PlayerHandUI } from '@/features/game/components/PlayerHandUI';
 import { VoiceChatManager } from '@/features/voice/components/VoiceChatManager';
@@ -54,15 +55,18 @@ export default function GameRoomPage() {
     setRoom, setPlayers, setLocalPlayerId, setPhase,
     setLocalHand, selectCard, setCanDraw, setCanDiscard,
     setCanDeclareWin, setDrawActions,
-    isDealingIntro, setIsDealingIntro, dealtCardsCount, setDealtCardsCount
+    isDealingIntro, setIsDealingIntro, dealtCardsCount, setDealtCardsCount,
+    startAnimation, isGraveDiggerActive, setIsGraveDiggerActive
   } = useGameStore();
   const { isMuted, toggleMute, isMicOn, toggleMic, isBgmOn, toggleBgm, bgmVolume, setBgmVolume, currentBgmIndex, setBgmIndex } = useUIStore();
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [selectedSpell, setSelectedSpell] = useState<SpellType | ''>('');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isPlayersOpen, setIsPlayersOpen] = useState(false);
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
+  const [isWindstormTargeting, setIsWindstormTargeting] = useState(false);
   const [isBgmPopoverOpen, setIsBgmPopoverOpen] = useState(false);
   const [activeReactions, setActiveReactions] = useState<{playerId: string, emoji: string, id: number}[]>([]);
   const [turnTimer, setTurnTimer] = useState(30);
@@ -143,8 +147,8 @@ export default function GameRoomPage() {
 
         // Check actions
         const myTurn = room?.currentTurn === user.uid && room?.status === 'playing';
-        setCanDraw(myTurn && hand.length === 4);
-        setCanDiscard(myTurn && hand.length === 5);
+        setCanDraw(myTurn && (hand.length === 4 || hand.length === 3));
+        setCanDiscard(myTurn && hand.length > 4);
         setCanDeclareWin(myTurn && isWinningHand(hand));
       }
     } else if (hasJoinedRef.current) {
@@ -170,8 +174,19 @@ export default function GameRoomPage() {
     return () => clearInterval(interval);
   }, [phase, room?.currentTurn, room?.turnTimeLimit]);
 
+  // Handle auto-start game when all players have selected spells
+  useEffect(() => {
+    if (!room || !user || room.hostId !== user.uid) return;
+    if (room.status === 'selecting_spell') {
+      const activePlayers = players.filter(p => !p.isSpectator);
+      const allReady = activePlayers.every(p => p.isReady);
+      if (allReady && activePlayers.length >= 2) {
+        handleStartGame();
+      }
+    }
+  }, [room?.status, players, user?.uid, room?.hostId]);
+
   // Handle Animations from lastAction
-  const startAnimation = useGameStore(s => s.startAnimation);
   const lastActionRef = useRef<number>(0);
   
   // Intro Sequence
@@ -330,6 +345,35 @@ export default function GameRoomPage() {
     }
   }, [room?.lastAction, players, user?.uid, startAnimation]);
 
+  const handlePrepareGame = async () => {
+    if (!room || !user || room.hostId !== user.uid) return;
+    
+    const activePlayers = players.filter(p => !p.isSpectator);
+    if (activePlayers.length < 2) return;
+
+    // Reset isReady for all players before starting
+    for (const player of activePlayers) {
+      await updatePlayer(roomId, player.id, { isReady: false, spellType: null });
+    }
+    
+    await updateRoom(roomId, {
+      status: 'selecting_spell'
+    });
+  };
+
+  const handleSelectSpell = async () => {
+    if (!room || !user || !selectedSpell || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      await updatePlayer(roomId, user.uid, {
+        spellType: selectedSpell,
+        isReady: true
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Game actions
   const handleStartGame = async () => {
     if (!room || !user || room.hostId !== user.uid) return;
@@ -371,7 +415,7 @@ export default function GameRoomPage() {
   };
 
   const handleDrawDeck = async () => {
-    if (!user || !room || room.currentTurn !== user.uid || localHand.length !== 4 || isProcessing) return;
+    if (!user || !room || room.currentTurn !== user.uid || localHand.length >= 5 || isProcessing) return;
     setIsProcessing(true);
     
     try {
@@ -382,13 +426,30 @@ export default function GameRoomPage() {
       const myPlayer = players.find(p => p.id === user.uid);
       if (!myPlayer) return;
 
-      audioManager.play('draw');
-      await updateRoom(roomId, { 
-        deckCards,
-        lastAction: { type: 'draw_deck', playerId: user.uid, cardId: 'hidden', timestamp: Date.now() }
-      });
+      const newHand = [...myPlayer.hand, drawnCard];
+      const isTurnOver = newHand.length === 4;
+
+      if (isTurnOver) {
+        const activePlayers = players.filter(p => !p.isSpectator);
+        const currentIdx = activePlayers.findIndex(p => p.id === user.uid);
+        const direction = room.turnDirection || 1;
+        const nextIdx = (currentIdx + direction + activePlayers.length) % activePlayers.length;
+
+        await updateRoom(roomId, { 
+          deckCards,
+          currentTurn: activePlayers[nextIdx].id,
+          turnStartedAt: Date.now(),
+          lastAction: { type: 'draw_deck', playerId: user.uid, cardId: 'hidden', timestamp: Date.now() }
+        });
+      } else {
+        await updateRoom(roomId, { 
+          deckCards,
+          lastAction: { type: 'draw_deck', playerId: user.uid, cardId: 'hidden', timestamp: Date.now() }
+        });
+      }
+      
       await updatePlayer(roomId, user.uid, {
-        hand: [...myPlayer.hand, drawnCard],
+        hand: newHand,
       });
     } finally {
       setIsProcessing(false);
@@ -396,7 +457,7 @@ export default function GameRoomPage() {
   };
 
   const handleDrawDiscard = async () => {
-    if (!user || !room || room.currentTurn !== user.uid || localHand.length !== 4 || isProcessing) return;
+    if (!user || !room || room.currentTurn !== user.uid || localHand.length >= 5 || isProcessing) return;
     setIsProcessing(true);
 
     try {
@@ -407,13 +468,30 @@ export default function GameRoomPage() {
       const myPlayer = players.find(p => p.id === user.uid);
       if (!myPlayer) return;
 
-      audioManager.play('draw');
-      await updateRoom(roomId, { 
-        discardPile,
-        lastAction: { type: 'draw_discard', playerId: user.uid, cardId: drawnCard, timestamp: Date.now() }
-      });
+      const newHand = [...myPlayer.hand, drawnCard];
+      const isTurnOver = newHand.length === 4;
+
+      if (isTurnOver) {
+        const activePlayers = players.filter(p => !p.isSpectator);
+        const currentIdx = activePlayers.findIndex(p => p.id === user.uid);
+        const direction = room.turnDirection || 1;
+        const nextIdx = (currentIdx + direction + activePlayers.length) % activePlayers.length;
+
+        await updateRoom(roomId, { 
+          discardPile,
+          currentTurn: activePlayers[nextIdx].id,
+          turnStartedAt: Date.now(),
+          lastAction: { type: 'draw_discard', playerId: user.uid, cardId: drawnCard, timestamp: Date.now() }
+        });
+      } else {
+        await updateRoom(roomId, { 
+          discardPile,
+          lastAction: { type: 'draw_discard', playerId: user.uid, cardId: drawnCard, timestamp: Date.now() }
+        });
+      }
+      
       await updatePlayer(roomId, user.uid, {
-        hand: [...myPlayer.hand, drawnCard],
+        hand: newHand,
       });
     } finally {
       setIsProcessing(false);
@@ -422,7 +500,7 @@ export default function GameRoomPage() {
 
   const handleDiscard = async (overrideCardId?: string) => {
     const cardToDiscard = overrideCardId || selectedCardId;
-    if (!user || !room || room.currentTurn !== user.uid || !cardToDiscard || localHand.length !== 5 || isProcessing) return;
+    if (!user || !room || room.currentTurn !== user.uid || !cardToDiscard || localHand.length <= 4 || isProcessing) return;
     setIsProcessing(true);
 
     try {
@@ -457,16 +535,130 @@ export default function GameRoomPage() {
       // Move to next active player
       const activePlayers = players.filter(p => !p.isSpectator);
       const currentIdx = activePlayers.findIndex(p => p.id === user.uid);
-      const nextIdx = (currentIdx + 1) % activePlayers.length;
+      const direction = room.turnDirection || 1;
+      const nextIdx = (currentIdx + direction + activePlayers.length) % activePlayers.length;
+
+      const isTurnOver = newHand.length === 4;
+
+      if (isTurnOver) {
+        await updateRoom(roomId, {
+          discardPile: newDiscard,
+          currentTurn: activePlayers[nextIdx].id,
+          turnStartedAt: Date.now(),
+          lastAction: { type: 'discard', playerId: user.uid, cardId: cardToDiscard, timestamp: Date.now() }
+        });
+      } else {
+        await updateRoom(roomId, {
+          discardPile: newDiscard,
+          lastAction: { type: 'discard', playerId: user.uid, cardId: cardToDiscard, timestamp: Date.now() }
+        });
+      }
+      
+      await updatePlayer(roomId, user.uid, { hand: newHand });
+      selectCard(null);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleUseSpell = async () => {
+    const myPlayer = players.find(p => p.id === user?.uid);
+    if (!user || !room || !myPlayer || myPlayer.hasUsedSpell || isProcessing || room.currentTurn !== user.uid) return;
+    setIsProcessing(true);
+
+    try {
+      const spellType = myPlayer.spellType;
+      if (!spellType) return;
+      
+      const activePlayers = players.filter(p => !p.isSpectator);
+      const currentIdx = activePlayers.findIndex(p => p.id === user.uid);
+      const direction = room.turnDirection || 1;
+
+      if (spellType === 'card_flip') {
+        await updateRoom(roomId, {
+          turnDirection: direction === 1 ? -1 : 1,
+          lastAction: { type: 'use_spell', playerId: user.uid, cardId: 'card_flip', timestamp: Date.now() }
+        });
+      } else if (spellType === 'shield') {
+        await updatePlayer(roomId, user.uid, { isShielded: true });
+        await updateRoom(roomId, {
+          lastAction: { type: 'use_spell', playerId: user.uid, cardId: 'shield', timestamp: Date.now() }
+        });
+      } else if (spellType === 'mulligan') {
+        const currentHand = myPlayer.hand;
+        const deck = [...(room.deckCards || [])];
+        if (deck.length < 4) return; 
+
+        const newHand = deck.splice(deck.length - 4, 4);
+        const newDiscard = [...(room.discardPile || []), ...currentHand];
+        
+        await updateRoom(roomId, {
+          deckCards: deck,
+          discardPile: newDiscard,
+          lastAction: { type: 'use_spell', playerId: user.uid, cardId: 'mulligan', timestamp: Date.now() }
+        });
+        await updatePlayer(roomId, user.uid, { hand: newHand });
+      } else if (spellType === 'windstorm') {
+        setIsWindstormTargeting(true);
+        setIsProcessing(false);
+        return;
+      } else if (spellType === 'grave_digger') {
+        setIsGraveDiggerActive(true);
+        setIsProcessing(false);
+        return;
+      }
+
+      audioManager.play('notify');
+      await updatePlayer(roomId, user.uid, { hasUsedSpell: true });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleWindstormTargetSelect = async (targetPlayerId: string) => {
+    if (!user || !room || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const myPlayer = players.find(p => p.id === user.uid);
+      const targetPlayer = players.find(p => p.id === targetPlayerId);
+      if (!myPlayer || !targetPlayer || targetPlayer.isShielded || myPlayer.hand.length === 0) {
+        setIsWindstormTargeting(false);
+        return;
+      }
+
+      const handCopy = [...myPlayer.hand];
+      const randomIdx = Math.floor(Math.random() * handCopy.length);
+      const passedCard = handCopy.splice(randomIdx, 1)[0];
+      
+      await updatePlayer(roomId, user.uid, { hand: handCopy, hasUsedSpell: true });
+      await updatePlayer(roomId, targetPlayer.id, { hand: [...targetPlayer.hand, passedCard] });
+      await updateRoom(roomId, {
+        lastAction: { type: 'use_spell', playerId: user.uid, cardId: 'windstorm', timestamp: Date.now() }
+      });
+      setIsWindstormTargeting(false);
+      audioManager.play('notify');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleGraveDiggerSelect = async (cardId: string) => {
+    if (!user || !room || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const myPlayer = players.find(p => p.id === user.uid);
+      if (!myPlayer) return;
+
+      const newHand = [...myPlayer.hand, cardId];
+      const newDiscard = (room.discardPile || []).filter(c => c !== cardId);
 
       await updateRoom(roomId, {
         discardPile: newDiscard,
-        currentTurn: activePlayers[nextIdx].id,
-        turnStartedAt: Date.now(),
-        lastAction: { type: 'discard', playerId: user.uid, cardId: cardToDiscard, timestamp: Date.now() }
+        lastAction: { type: 'use_spell', playerId: user.uid, cardId: 'grave_digger', timestamp: Date.now() }
       });
-      await updatePlayer(roomId, user.uid, { hand: newHand });
-      selectCard(null);
+      await updatePlayer(roomId, user.uid, { hand: newHand, hasUsedSpell: true });
+      setIsGraveDiggerActive(false);
+      audioManager.play('draw');
     } finally {
       setIsProcessing(false);
     }
@@ -627,7 +819,10 @@ export default function GameRoomPage() {
         if (otherPlayers.length > 0) {
           // Simple pass to next available player
           const currentIdx = activePlayers.findIndex(p => p.id === user.uid);
-          const nextIdx = currentIdx === activePlayers.length - 1 ? 0 : currentIdx;
+          const direction = room.turnDirection || 1;
+          const nextIdx = direction === 1 
+            ? currentIdx % otherPlayers.length 
+            : (currentIdx - 1 + otherPlayers.length) % otherPlayers.length;
           const nextPlayer = otherPlayers[nextIdx] || otherPlayers[0];
           await updateRoom(roomId, {
             currentTurn: nextPlayer.id,
@@ -654,7 +849,10 @@ export default function GameRoomPage() {
         const otherPlayers = activePlayers.filter(p => p.id !== targetPlayerId);
         if (otherPlayers.length > 0) {
           const currentIdx = activePlayers.findIndex(p => p.id === targetPlayerId);
-          const nextIdx = currentIdx === activePlayers.length - 1 ? 0 : currentIdx;
+          const direction = room.turnDirection || 1;
+          const nextIdx = direction === 1 
+            ? currentIdx % otherPlayers.length 
+            : (currentIdx - 1 + otherPlayers.length) % otherPlayers.length;
           const nextPlayer = otherPlayers[nextIdx] || otherPlayers[0];
           await updateRoom(roomId, {
             currentTurn: nextPlayer.id,
@@ -873,6 +1071,7 @@ export default function GameRoomPage() {
               <div className={`w-1.5 h-1.5 rounded-full ${p.isConnected ? 'bg-success' : 'bg-danger'}`} />
               <span className={`font-medium flex items-center gap-1 ${p.id === user?.uid ? 'text-primary' : 'text-text'}`}>
                 {p.name} 
+                {p.isShielded && <span title="Dilindungi (Shield)">🛡️</span>}
                 {p.isSpectator && <span className="text-text-muted text-[10px] uppercase font-normal ml-1">Spectator</span>}
                 {p.id === room?.hostId && <Crown className="w-3 h-3 text-secondary" />}
               </span>
@@ -937,7 +1136,11 @@ export default function GameRoomPage() {
         )}
 
         {/* 2D Player Hand UI */}
-        <PlayerHandUI onDiscard={handleDiscard} />
+        <PlayerHandUI 
+          onDiscard={handleDiscard} 
+          onDeclareWin={() => handleDiscard()} // Use current selected card
+          onUseSpell={handleUseSpell}
+        />
 
         {/* Player Hand Score & Audio */}
         {isPlaying && localHand.length > 0 && !isDealingIntro && (
@@ -966,7 +1169,7 @@ export default function GameRoomPage() {
         {/* Action Buttons */}
         {isPlaying && myTurn && !isDealingIntro && (
           <div className="absolute bottom-32 md:bottom-32 right-4 md:right-8 flex flex-col gap-2 scale-90 md:scale-100 origin-bottom-right z-10">
-            {localHand.length === 4 && (
+            {localHand.length <= 4 && (
               <>
                 <button
                   onClick={handleDrawDeck}
@@ -986,7 +1189,7 @@ export default function GameRoomPage() {
                 )}
               </>
             )}
-            {localHand.length === 5 && selectedCardId && (
+            {localHand.length > 4 && selectedCardId && (
               <button
                 onClick={() => handleDiscard()}
                 disabled={isProcessing}
@@ -999,7 +1202,7 @@ export default function GameRoomPage() {
         )}
 
         {/* Waiting Room Overlay */}
-        {isWaiting && (
+        {room?.status === 'waiting' && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -1022,7 +1225,7 @@ export default function GameRoomPage() {
                     <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
                       {p.name.charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-text font-medium">{p.name} {p.isSpectator && <span className="text-text-muted text-xs font-normal">(Penonton)</span>}</span>
+                    <span className="text-text font-medium">{p.name} {p.isShielded && <span title="Dilindungi (Shield)">🛡️</span>} {p.isSpectator && <span className="text-text-muted text-xs font-normal">(Penonton)</span>}</span>
                     {p.id === room?.hostId && (
                       <span className="ml-auto text-secondary text-xs flex items-center gap-1">Host <Crown className="w-3 h-3" /></span>
                     )}
@@ -1040,7 +1243,7 @@ export default function GameRoomPage() {
 
               {isHost && players.filter(p => !p.isSpectator).length >= 2 && (
                 <button
-                  onClick={handleStartGame}
+                  onClick={handlePrepareGame}
                   className="w-full btn-gold py-4 rounded-xl text-lg font-bold"
                 >
                   <span className="flex items-center justify-center gap-2"><Rocket className="w-6 h-6" /> Mulai Permainan!</span>
@@ -1059,6 +1262,156 @@ export default function GameRoomPage() {
             </motion.div>
           </div>
         )}
+
+        {/* Spell Selection Phase Overlay */}
+        {room?.status === 'selecting_spell' && (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="glass-card p-8 max-w-2xl w-full mx-4 text-center"
+            >
+              <h2 className="font-heading text-3xl font-black text-secondary mb-2">Pilih Spell Anda</h2>
+              <p className="text-text-muted mb-8">Pilih 1 kemampuan spesial yang akan membantu Anda memenangkan permainan.</p>
+              
+              {players.find(p => p.id === user?.uid)?.isReady ? (
+                <div className="py-12">
+                  <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-text-bright text-lg">Menunggu pemain lain memilih spell...</p>
+                  <p className="text-text-muted mt-2">
+                    {players.filter(p => !p.isSpectator && p.isReady).length} / {players.filter(p => !p.isSpectator).length} siap
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+                    {[
+                      { id: 'card_flip', name: 'Putar Balik', icon: 'Card Flip (Putar Balik).svg', desc: 'Ubah arah giliran' },
+                      { id: 'grave_digger', name: 'Penggali Kubur', icon: 'Grave Digger (Penggali Kubur).svg', desc: 'Ambil dari tumpukan buangan' },
+                      { id: 'mulligan', name: 'Tukar Baru', icon: 'Mulligan  Refresh (Tukar Baru).svg', desc: 'Tukar 4 kartu baru' },
+                      { id: 'shield', name: 'Pelindung', icon: 'Shield (Pelindung).svg', desc: 'Kebal dari serangan' },
+                      { id: 'windstorm', name: 'Badai', icon: 'Windstorm (Badai).svg', desc: 'Beri lawan 1 kartu' },
+                    ].map(spell => (
+                      <button
+                        key={spell.id}
+                        onClick={() => setSelectedSpell(spell.id as SpellType)}
+                        className={`p-4 rounded-xl flex flex-col items-center justify-center transition-all ${
+                          selectedSpell === spell.id 
+                            ? 'bg-primary/20 border-2 border-primary shadow-[0_0_15px_rgba(245,158,11,0.5)] scale-105' 
+                            : 'bg-surface-dark border-2 border-transparent hover:border-surface-light hover:bg-surface'
+                        }`}
+                      >
+                        <img src={encodeURI(`/spel/${spell.icon}`)} alt={spell.name} className="w-16 h-16 object-contain drop-shadow-md mb-3" />
+                        <span className="font-bold text-sm text-text-bright mb-1">{spell.name}</span>
+                        <span className="text-[10px] text-text-muted leading-tight">{spell.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <button
+                    onClick={handleSelectSpell}
+                    disabled={!selectedSpell || isProcessing}
+                    className="w-full btn-primary py-4 rounded-xl text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Konfirmasi Spell
+                  </button>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+
+        {/* Grave Digger Modal */}
+        <AnimatePresence>
+          {isGraveDiggerActive && room?.discardPile && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[70] flex items-center justify-center bg-background/80 backdrop-blur-md"
+            >
+              <motion.div
+                initial={{ scale: 0.8, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="glass-card p-6 max-w-lg w-full text-center"
+              >
+                <h3 className="text-xl font-bold text-secondary mb-4">Penggali Kubur</h3>
+                <p className="text-sm text-text-muted mb-6">Pilih 1 kartu dari tumpukan buangan untuk diambil.</p>
+                
+                <div className="flex justify-center gap-4 mb-6">
+                  {room.discardPile.slice(-3).reverse().map((cardId) => {
+                    const [suit, rank] = cardId.split('-');
+                    return (
+                      <button
+                        key={cardId}
+                        onClick={() => handleGraveDiggerSelect(cardId)}
+                        className="relative w-24 h-36 hover:scale-110 transition-transform"
+                      >
+                        <img 
+                          src={encodeURI(`/kartu/Suit=${suit.charAt(0).toUpperCase() + suit.slice(1)}, Number=${rank}.svg`)} 
+                          alt={cardId} 
+                          className="w-full h-full object-contain drop-shadow-md rounded-md"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                <button
+                  onClick={() => setIsGraveDiggerActive(false)}
+                  className="btn-secondary py-2 px-6 rounded-xl text-sm"
+                >
+                  Batal
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Windstorm Targeting Modal */}
+        <AnimatePresence>
+          {isWindstormTargeting && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[70] flex items-center justify-center bg-background/80 backdrop-blur-md"
+            >
+              <motion.div
+                initial={{ scale: 0.8, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="glass-card p-6 max-w-sm w-full text-center mx-4"
+              >
+                <h3 className="text-xl font-bold text-secondary mb-2">Pilih Target Badai</h3>
+                <p className="text-sm text-text-muted mb-6">Pilih pemain lawan untuk dilemparkan 1 kartu acak dari tangan Anda.</p>
+                
+                <div className="flex flex-col gap-3 mb-6 max-h-[40vh] overflow-y-auto pr-2">
+                  {players.filter(p => !p.isSpectator && p.id !== user?.uid).map(target => (
+                    <button
+                      key={target.id}
+                      onClick={() => handleWindstormTargetSelect(target.id)}
+                      disabled={target.isShielded}
+                      className="glass-card p-3 flex items-center justify-between hover:bg-surface-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed group text-left"
+                    >
+                      <div>
+                        <span className="font-bold text-text-bright">{target.name}</span>
+                        {target.isShielded && <span className="block text-xs text-text-muted">Sedang Dilindungi 🛡️</span>}
+                      </div>
+                      <span className="text-xl group-hover:scale-125 transition-transform">🎯</span>
+                    </button>
+                  ))}
+                </div>
+                
+                <button
+                  onClick={() => setIsWindstormTargeting(false)}
+                  className="btn-secondary py-2 px-6 rounded-xl text-sm"
+                >
+                  Batal
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Game Over Overlay */}
         <AnimatePresence>

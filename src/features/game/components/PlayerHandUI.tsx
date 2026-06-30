@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '@/features/game/stores/gameStore';
+import { SpellButton } from './SpellButton';
 
 /**
  * 2D card hand UI overlay — renders at the bottom of the screen
@@ -10,9 +11,11 @@ import { useGameStore } from '@/features/game/stores/gameStore';
  */
 interface PlayerHandUIProps {
   onDiscard?: (cardId: string) => void;
+  onUseSpell: () => void;
+  onDeclareWin?: () => void;
 }
 
-export function PlayerHandUI({ onDiscard }: PlayerHandUIProps) {
+export function PlayerHandUI({ onDiscard, onUseSpell, onDeclareWin }: PlayerHandUIProps) {
   const localHand = useGameStore((s) => s.localHand);
   const isDealingIntro = useGameStore((s) => s.isDealingIntro);
   const dealtCardsCount = useGameStore((s) => s.dealtCardsCount);
@@ -21,6 +24,15 @@ export function PlayerHandUI({ onDiscard }: PlayerHandUIProps) {
   const hoveredCardId = useGameStore((s) => s.hoveredCardId);
   const hoverCard = useGameStore((s) => s.hoverCard);
   const phase = useGameStore((s) => s.phase);
+  
+  const players = useGameStore((s) => s.players);
+  const localPlayerId = useGameStore((s) => s.localPlayerId);
+  const room = useGameStore((s) => s.room);
+  
+  const player = players.find(p => p.id === localPlayerId);
+  const isMyTurn = room?.currentTurn === localPlayerId;
+  const canDraw = useGameStore((s) => s.canDraw);
+  const canDiscard = useGameStore((s) => s.canDiscard);
 
   const displayHand = isDealingIntro ? localHand.slice(0, dealtCardsCount) : localHand;
 
@@ -103,6 +115,17 @@ export function PlayerHandUI({ onDiscard }: PlayerHandUIProps) {
             );
           })}
         </AnimatePresence>
+      </div>
+
+      <div className="absolute right-4 bottom-4 z-50 pointer-events-auto">
+        {player && (
+          <SpellButton 
+            player={player} 
+            isMyTurn={isMyTurn} 
+            onUseSpell={onUseSpell}
+            disabled={(!canDraw && !canDiscard)} 
+          />
+        )}
       </div>
 
       <style jsx>{`
