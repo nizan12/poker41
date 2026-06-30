@@ -115,7 +115,7 @@ export function PlayerHandUI({ onDiscard }: PlayerHandUIProps) {
           justify-content: center;
           padding-bottom: 12px;
           pointer-events: none;
-          z-index: 30;
+          z-index: 60;
         }
         .hand-container {
           display: flex;

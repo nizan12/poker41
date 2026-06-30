@@ -1067,13 +1067,13 @@ export default function GameRoomPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-md"
+              className="absolute inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-md"
             >
               <motion.div
                 initial={{ scale: 0.8, y: 20 }}
                 animate={{ scale: 1, y: 0 }}
                 transition={{ type: 'spring', damping: 20 }}
-                className="glass-card p-8 max-w-md w-full mx-4 text-center max-h-[90vh] overflow-y-auto"
+                className="glass-card p-8 max-w-md w-full mx-4 text-center max-h-[65vh] overflow-y-auto mb-20"
               >
                 <div className="flex justify-center mb-4">
                   {room?.winnerId === 'DRAW' ? <Library className="w-16 h-16 text-primary" /> : <Trophy className="w-16 h-16 text-secondary" />}
