@@ -1,6 +1,6 @@
 'use client';
 
-import { signInAnonymously, onAuthStateChanged, type User } from 'firebase/auth';
+import { signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { auth } from '@/lib/firebase/config';
 import { create } from 'zustand';
 
@@ -9,6 +9,8 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   signIn: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signOutUser: () => Promise<void>;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
 }
@@ -22,6 +24,25 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       set({ loading: true, error: null });
       await signInAnonymously(auth);
+    } catch (error) {
+      set({ error: (error as Error).message, loading: false });
+    }
+  },
+
+  signInWithGoogle: async () => {
+    try {
+      set({ loading: true, error: null });
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      set({ error: (error as Error).message, loading: false });
+    }
+  },
+
+  signOutUser: async () => {
+    try {
+      set({ loading: true, error: null });
+      await signOut(auth);
     } catch (error) {
       set({ error: (error as Error).message, loading: false });
     }
