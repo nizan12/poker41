@@ -43,6 +43,7 @@ export interface Player {
   spellType?: SpellType;  // Spell assigned to player
   hasUsedSpell?: boolean;
   isShielded?: boolean;
+  avatar?: string;        // URL to their avatar image
 }
 
 export type SpellType = 'card_flip' | 'grave_digger' | 'mulligan' | 'shield' | 'windstorm';

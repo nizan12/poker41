@@ -40,6 +40,8 @@ export default function LobbyPage() {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Auto-fill player name if logged in with Google
   useEffect(() => {
@@ -106,6 +108,7 @@ export default function LobbyPage() {
       // Add host as first player
       await addPlayer(roomId, currentUser.uid, {
         name: playerName.trim(),
+        avatar: currentUser.photoURL || undefined,
         hand: [],
         score: 0,
         isReady: false,
@@ -168,6 +171,7 @@ export default function LobbyPage() {
 
         await addPlayer(joinId, currentUser.uid, {
           name: playerName.trim(),
+          avatar: currentUser.photoURL || undefined,
           hand: [],
           score: 0,
           isReady: false,
@@ -199,6 +203,48 @@ export default function LobbyPage() {
     }
   };
 
+  const { updateAvatar } = useAuthStore();
+  const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Maksimal ukuran file 2MB");
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const response = await fetch(
+        `/api/avatar/upload?filename=${encodeURIComponent(file.name)}`,
+        {
+          method: 'POST',
+          body: file,
+        },
+      );
+      if (!response.ok) throw new Error("Gagal upload");
+      const newBlob = await response.json();
+      await updateAvatar(newBlob.url);
+      setIsAvatarModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert("Gagal mengupload avatar");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleSelectCdnAvatar = async (seed: string) => {
+    setUploadingAvatar(true);
+    try {
+      const url = `https://api.dicebear.com/7.x/adventurer/svg?seed=${seed}`;
+      await updateAvatar(url);
+      setIsAvatarModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-background flex flex-col">
       {/* Header */}
@@ -222,7 +268,11 @@ export default function LobbyPage() {
           
           {user && !user.isAnonymous ? (
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 bg-surface px-3 py-1.5 rounded-full border border-border">
+              <div 
+                onClick={() => setIsAvatarModalOpen(true)}
+                className="flex items-center gap-2 bg-surface px-3 py-1.5 rounded-full border border-border cursor-pointer hover:border-primary transition-colors"
+                title="Ganti Avatar"
+              >
                 {user.photoURL ? (
                   <img src={user.photoURL} alt="Profile" className="w-6 h-6 rounded-full" />
                 ) : (
@@ -501,6 +551,75 @@ export default function LobbyPage() {
                     </div>
                   ))
                 )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Avatar Modal */}
+      <AnimatePresence>
+        {isAvatarModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="glass-card w-full max-w-md flex flex-col relative"
+            >
+              <button 
+                onClick={() => setIsAvatarModalOpen(false)}
+                className="absolute top-4 right-4 text-text-muted hover:text-text"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              
+              <div className="p-6 border-b border-border">
+                <h2 className="text-xl font-heading font-bold text-text-bright">Ganti Avatar</h2>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div>
+                  <label className="block text-text-muted text-sm font-medium mb-3">
+                    Upload Foto Sendiri (Max 2MB)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleUploadAvatar}
+                    disabled={uploadingAvatar}
+                    className="block w-full text-sm text-text-muted
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-primary/20 file:text-primary
+                      hover:file:bg-primary/30 file:transition-colors cursor-pointer"
+                  />
+                  {uploadingAvatar && <p className="text-primary text-xs mt-2 animate-pulse">Sedang mengupload...</p>}
+                </div>
+
+                <div>
+                  <label className="block text-text-muted text-sm font-medium mb-3">
+                    Atau Pilih Avatar Lucu
+                  </label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {['Felix', 'Luna', 'Max', 'Bella', 'Charlie', 'Milo', 'Leo', 'Daisy'].map(seed => (
+                      <button
+                        key={seed}
+                        disabled={uploadingAvatar}
+                        onClick={() => handleSelectCdnAvatar(seed)}
+                        className="aspect-square rounded-xl bg-surface-dark border border-border hover:border-primary transition-all overflow-hidden p-2"
+                      >
+                        <img src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${seed}`} alt={seed} className="w-full h-full" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </motion.div>
           </motion.div>

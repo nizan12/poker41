@@ -1,6 +1,6 @@
 'use client';
 
-import { signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, type User } from 'firebase/auth';
+import { signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, updateProfile, type User } from 'firebase/auth';
 import { auth } from '@/lib/firebase/config';
 import { create } from 'zustand';
 
@@ -11,6 +11,7 @@ interface AuthState {
   signIn: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOutUser: () => Promise<void>;
+  updateAvatar: (photoURL: string) => Promise<void>;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
 }
@@ -45,6 +46,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       await signOut(auth);
     } catch (error) {
       set({ error: (error as Error).message, loading: false });
+    }
+  },
+
+  updateAvatar: async (photoURL: string) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Not logged in");
+      await updateProfile(user, { photoURL });
+      set({ user: { ...user } as User }); // force update
+    } catch (error) {
+      set({ error: (error as Error).message });
     }
   },
 

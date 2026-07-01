@@ -1174,6 +1174,7 @@ export default function GameRoomPage() {
               }`}
             >
               <div className={`w-1.5 h-1.5 rounded-full ${p.isConnected ? 'bg-success' : 'bg-danger'}`} />
+              {p.avatar && <img src={p.avatar} alt={p.name} className="w-5 h-5 rounded-full object-cover bg-surface" />}
               <span className={`font-medium flex items-center gap-1 ${p.id === user?.uid ? 'text-primary' : 'text-text'}`}>
                 {p.name} 
                 {p.isShielded && <span title="Dilindungi (Shield)">🛡️</span>}
