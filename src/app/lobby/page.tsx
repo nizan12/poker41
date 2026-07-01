@@ -220,13 +220,16 @@ export default function LobbyPage() {
           body: file,
         },
       );
-      if (!response.ok) throw new Error("Gagal upload");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || "Gagal upload");
+      }
       const newBlob = await response.json();
       await updateAvatar(newBlob.url);
       setIsAvatarModalOpen(false);
     } catch (err) {
       console.error(err);
-      alert("Gagal mengupload avatar");
+      alert("Gagal: " + (err as Error).message);
     } finally {
       setUploadingAvatar(false);
     }
