@@ -25,6 +25,12 @@ export function VoiceChatManager() {
         // Let PeerJS generate a random ID to avoid "ID is taken" errors
         const peer = new Peer({
           debug: 2,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+          }
         });
 
         peer.on('open', async (id) => {
@@ -39,11 +45,23 @@ export function VoiceChatManager() {
 
         peer.on('call', (call) => {
           console.log('[VoiceChat] Incoming call from:', call.peer);
-          call.answer(localStreamRef.current || undefined);
+          if (localStreamRef.current) {
+            call.answer(localStreamRef.current);
+          } else {
+            call.answer();
+          }
           
           call.on('stream', (remoteStream) => {
             console.log('[VoiceChat] Received remote stream from:', call.peer);
             setRemoteStreams((prev) => ({ ...prev, [call.peer]: remoteStream }));
+          });
+
+          call.on('close', () => {
+            setRemoteStreams((prev) => {
+              const next = { ...prev };
+              delete next[call.peer];
+              return next;
+            });
           });
         });
 
@@ -75,7 +93,13 @@ export function VoiceChatManager() {
 
     const enableMic = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          } 
+        });
         localStreamRef.current = stream;
 
         // If we just turned on the mic, we need to call everyone in the room who isn't us
@@ -147,6 +171,7 @@ export function VoiceChatManager() {
           ref={(el) => {
             if (el && el.srcObject !== stream) {
               el.srcObject = stream;
+              el.play().catch(e => console.warn('[VoiceChat] Audio play failed:', e));
             }
           }}
         />
